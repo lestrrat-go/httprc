@@ -290,7 +290,11 @@ func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
 func (q *queue) Enqueue(u string, interval time.Duration) error {
 	fireAt := time.Now().Add(interval).Round(time.Second)
 
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
 	list := q.list
+
 	ll := len(list)
 	if ll == 0 || list[ll-1].fireAt.Before(fireAt) {
 		list = append(list, &rqentry{
