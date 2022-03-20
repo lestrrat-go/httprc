@@ -2,8 +2,14 @@ package_name: httprc
 output: options_gen.go
 interfaces:
   - name: RegisterOption
-  - name: NewOption
+  - name: ConstructorOption
 options:
+  - ident: FetchWorkerCount
+    interface: ConstructorOption
+    argument_type: int
+  - ident: Transformer
+    interface: RegisterOption
+    argument_type: Transformer
   - ident: HTTPClient
     interface: RegisterOption
     argument_type: HTTPClient
@@ -14,5 +20,5 @@ options:
     interface: RegisterOption
     argument_type: time.Duration
   - ident: RefreshWindow
-    interface: NewOption
+    interface: ConstructorOption
     argument_type: time.Duration

@@ -6,15 +6,9 @@ import (
 	"net/http"
 )
 
-// Fetcher is an interface, because you are under no circumstances
-// allowed to use a zero value for the underlying implementation.
-type Fetcher interface {
-	Fetch(context.Context, *FetchRequest) (*http.Response, error)
-}
-
-// FetchRequest is a set of data that can be used to make an HTTP
+// fetchRequest is a set of data that can be used to make an HTTP
 // request.
-type FetchRequest struct {
+type fetchRequest struct {
 	// Client contains the HTTP Client that can be used to make a
 	// request. By setting a custom *http.Client, you can for example
 	// provide a custom http.Transport
@@ -36,13 +30,11 @@ type fetchResult struct {
 }
 
 type fetcher struct {
-	requests chan *FetchRequest
+	requests chan *fetchRequest
 }
 
-func NewFetcher(ctx context.Context /*options ...FetcherOption*/) Fetcher {
-	nworkers := 1
-
-	incoming := make(chan *FetchRequest)
+func newFetcher(ctx context.Context, nworkers int) *fetcher {
+	incoming := make(chan *fetchRequest)
 	for i := 0; i < nworkers; i++ {
 		go runFetchWorker(ctx, incoming)
 	}
@@ -53,7 +45,7 @@ func NewFetcher(ctx context.Context /*options ...FetcherOption*/) Fetcher {
 
 // Fetch requests that a HTTP request be made on behalf of the caller,
 // and returns the http.Response object.
-func (f *fetcher) Fetch(ctx context.Context, req *FetchRequest) (*http.Response, error) {
+func (f *fetcher) Fetch(ctx context.Context, req *fetchRequest) (*http.Response, error) {
 	reply := make(chan *fetchResult)
 	req.reply = reply
 
@@ -76,7 +68,7 @@ func (f *fetcher) Fetch(ctx context.Context, req *FetchRequest) (*http.Response,
 	return nil, fmt.Errorf(`httprc.Fetcher.Fetch: should not get here`)
 }
 
-func runFetchWorker(ctx context.Context, incoming chan *FetchRequest) error {
+func runFetchWorker(ctx context.Context, incoming chan *fetchRequest) error {
 LOOP:
 	for {
 		select {

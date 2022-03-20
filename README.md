@@ -1,6 +1,8 @@
 # httprc
 
-Cache resources that can be fetched by HTTP Requests, while keeping cached content up to date.
+`httprc` is a HTTP "Refresh" Cache. Its aim is to cache a remote resource that
+can be fetched via HTTP, but keep the cached content up-to-date based on periodic
+refreshing.
 
 # Sequence Diagram
 

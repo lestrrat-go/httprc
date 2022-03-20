@@ -10,16 +10,16 @@ import (
 
 type Option = option.Interface
 
-type NewOption interface {
+type ConstructorOption interface {
 	Option
-	newOption()
+	constructorOption()
 }
 
-type newOption struct {
+type constructorOption struct {
 	Option
 }
 
-func (*newOption) newOption() {}
+func (*constructorOption) constructorOption() {}
 
 type RegisterOption interface {
 	Option
@@ -32,10 +32,16 @@ type registerOption struct {
 
 func (*registerOption) registerOption() {}
 
+type identFetchWorkerCount struct{}
 type identHTTPClient struct{}
 type identMinRefreshInterval struct{}
 type identRefreshInterval struct{}
 type identRefreshWindow struct{}
+type identTransformer struct{}
+
+func (identFetchWorkerCount) String() string {
+	return "WithFetchWorkerCount"
+}
 
 func (identHTTPClient) String() string {
 	return "WithHTTPClient"
@@ -53,6 +59,14 @@ func (identRefreshWindow) String() string {
 	return "WithRefreshWindow"
 }
 
+func (identTransformer) String() string {
+	return "WithTransformer"
+}
+
+func WithFetchWorkerCount(v int) ConstructorOption {
+	return &constructorOption{option.New(identFetchWorkerCount{}, v)}
+}
+
 func WithHTTPClient(v HTTPClient) RegisterOption {
 	return &registerOption{option.New(identHTTPClient{}, v)}
 }
@@ -65,6 +79,10 @@ func WithRefreshInterval(v time.Duration) RegisterOption {
 	return &registerOption{option.New(identRefreshInterval{}, v)}
 }
 
-func WithRefreshWindow(v time.Duration) NewOption {
-	return &newOption{option.New(identRefreshWindow{}, v)}
+func WithRefreshWindow(v time.Duration) ConstructorOption {
+	return &constructorOption{option.New(identRefreshWindow{}, v)}
+}
+
+func WithTransformer(v Transformer) RegisterOption {
+	return &registerOption{option.New(identTransformer{}, v)}
 }

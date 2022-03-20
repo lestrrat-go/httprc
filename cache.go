@@ -1,0 +1,104 @@
+package httprc
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+)
+
+type HTTPClient interface {
+	Get(string) (*http.Response, error)
+}
+
+// Cache represents a cache that stores resources locally, while
+// periodically refreshing the contents based on HTTP header values
+// and/or user-supplied hints.
+//
+// Refresh is performed _periodically_, and therefore the contents
+// are not kept up-to-date in real time. The interval between checks
+// for refreshes is called the refresh window.
+//
+// The default refresh window is 15 minutes. This means that if a
+// resource is fetched is at time T, and it is supposed to be
+// refreshed in 20 minutes, the next refresh for this resource will
+// happen at T+30 minutes (15+15 minutes).
+type Cache struct {
+	mu    sync.RWMutex
+	queue *queue
+}
+
+const defaultRefreshWindow = 15 * time.Minute
+
+// New creates a new Cache object
+//
+// The refresh window can be configured by using `httprc.WithRefreshWindow`
+// option. If you want refreshes to be performed more often, provide a smaller
+// refresh window. If you specify a refresh window that is smaller than 1
+// second, it will automatically be set to the default value, which is 15
+// minutes.
+//
+// Internally the HTTP fetching is done using a pool of HTTP fetch
+// workers. The default number of workers is 3. You may change this
+// number by specifying the `httprc.WithFetchWorkerCount`
+func New(ctx context.Context, options ...ConstructorOption) *Cache {
+	var refreshWindow time.Duration
+	var nfetchers int
+	for _, option := range options {
+		//nolint:forcetypeassert
+		switch option.Ident() {
+		case identRefreshWindow{}:
+			refreshWindow = option.Value().(time.Duration)
+		case identFetchWorkerCount{}:
+			nfetchers = option.Value().(int)
+		}
+	}
+
+	if refreshWindow < time.Second {
+		refreshWindow = defaultRefreshWindow
+	}
+
+	if nfetchers < 1 {
+		nfetchers = 3
+	}
+
+	fetch := newFetcher(ctx, nfetchers)
+	queue := newQueue(ctx, refreshWindow, fetch)
+
+	return &Cache{
+		queue: queue,
+	}
+}
+
+// Register configures a URL to be stored in the cache.
+//
+// For any given URL, the URL must be registered _BEFORE_ it is
+// accessed using `Get()` method.
+func (c *Cache) Register(u string, options ...RegisterOption) error {
+	c.mu.Lock()
+	c.queue.Register(u, options...)
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
+	c.mu.RLock()
+	e, ok := c.queue.getRegistered(u)
+	if !ok {
+		c.mu.RUnlock()
+		return nil, fmt.Errorf(`url %q is not registered (did you make sure to call Register() first?)`, u)
+	}
+	c.mu.RUnlock()
+
+	// Only one goroutine may enter this section.
+	e.acquireSem()
+	// has this entry been fetched?
+	if !e.hasBeenFetched() {
+		c.queue.fetchAndStore(ctx, e)
+	}
+
+	e.releaseSem()
+
+	return e.data, nil
+}

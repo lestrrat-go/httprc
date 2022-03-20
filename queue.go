@@ -4,13 +4,37 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/lestrrat-go/httpcc"
 )
+
+// Transformer is responsible for converting an HTTP response
+// into an appropriate form of your choosing.
+type Transformer interface {
+	// Transform receives an HTTP response object, and should
+	// return an appropriate object that suits your needs.
+	//
+	// If you happen to use the response body, you are responsible
+	// for closing the body
+	Transform(*http.Response) (interface{}, error)
+}
+
+// BodyBytes is the default Transformer applied to all resources
+type BodyBytes struct{}
+
+func (BodyBytes) Transform(res *http.Response) (interface{}, error) {
+	buf, err := ioutil.ReadAll(res.Body)
+	defer res.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf(`failed to read response body: %w`, err)
+	}
+
+	return buf, nil
+}
 
 type rqentry struct {
 	fireAt time.Time
@@ -52,8 +76,10 @@ type entry struct {
 	refreshInterval    time.Duration
 	minRefreshInterval time.Duration
 
-	request *FetchRequest
-	data    interface{}
+	request *fetchRequest
+
+	transform Transformer
+	data      interface{}
 }
 
 func (e *entry) acquireSem() {
@@ -68,12 +94,12 @@ func (e *entry) hasBeenFetched() bool {
 	return !e.lastFetch.IsZero()
 }
 
-// Queue is responsible for updating the contents of the storage
-type Queue struct {
+// queue is responsible for updating the contents of the storage
+type queue struct {
 	mu         sync.RWMutex
 	registry   map[string]*entry
 	windowSize time.Duration
-	fetch      Fetcher
+	fetch      *fetcher
 	fetchCond  *sync.Cond
 	fetchQueue []*rqentry
 
@@ -83,9 +109,9 @@ type Queue struct {
 	list []*rqentry
 }
 
-func NewQueue(ctx context.Context, window time.Duration, fetch Fetcher) *Queue {
+func newQueue(ctx context.Context, window time.Duration, fetch *fetcher) *queue {
 	fetchLocker := &sync.Mutex{}
-	rq := &Queue{
+	rq := &queue{
 		windowSize: window,
 		fetch:      fetch,
 		fetchCond:  sync.NewCond(fetchLocker),
@@ -97,9 +123,11 @@ func NewQueue(ctx context.Context, window time.Duration, fetch Fetcher) *Queue {
 	return rq
 }
 
-func (q *Queue) Register(u string, options ...RegisterOption) {
+func (q *queue) Register(u string, options ...RegisterOption) {
 	var refreshInterval time.Duration
 	var httpcl HTTPClient
+	var transform Transformer = BodyBytes{}
+
 	minRefreshInterval := 15 * time.Minute
 	for _, option := range options {
 		//nolint:forcetypeassert
@@ -110,14 +138,17 @@ func (q *Queue) Register(u string, options ...RegisterOption) {
 			refreshInterval = option.Value().(time.Duration)
 		case identMinRefreshInterval{}:
 			minRefreshInterval = option.Value().(time.Duration)
+		case identTransformer{}:
+			transform = option.Value().(Transformer)
 		}
 	}
 
 	e := entry{
 		sem:                make(chan struct{}, 1),
 		minRefreshInterval: minRefreshInterval,
+		transform:          transform,
 		refreshInterval:    refreshInterval,
-		request: &FetchRequest{
+		request: &fetchRequest{
 			Client: httpcl,
 			URL:    u,
 		},
@@ -127,7 +158,7 @@ func (q *Queue) Register(u string, options ...RegisterOption) {
 	q.mu.Unlock()
 }
 
-func (q *Queue) getRegistered(u string) (*entry, bool) {
+func (q *queue) getRegistered(u string) (*entry, bool) {
 	q.mu.RLock()
 	e, ok := q.registry[u]
 	q.mu.RUnlock()
@@ -135,12 +166,12 @@ func (q *Queue) getRegistered(u string) (*entry, bool) {
 	return e, ok
 }
 
-func (q *Queue) IsRegistered(u string) bool {
+func (q *queue) IsRegistered(u string) bool {
 	_, ok := q.getRegistered(u)
 	return ok
 }
 
-func (q *Queue) fetchLoop(ctx context.Context) {
+func (q *queue) fetchLoop(ctx context.Context) {
 	for {
 		q.fetchCond.L.Lock()
 		for len(q.fetchQueue) <= 0 {
@@ -173,7 +204,7 @@ func (q *Queue) fetchLoop(ctx context.Context) {
 }
 
 // This loop is responsible for periodically updating the cached content
-func (q *Queue) refreshLoop(ctx context.Context) {
+func (q *queue) refreshLoop(ctx context.Context) {
 	// Tick every q.windowSize duration.
 	ticker := time.NewTicker(q.windowSize)
 
@@ -217,32 +248,28 @@ func (q *Queue) refreshLoop(ctx context.Context) {
 	}
 }
 
-func (q *Queue) fetchAndStore(ctx context.Context, e *entry) error {
+func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
 	// synchronously go fetch
 	e.lastFetch = time.Now()
 	res, err := q.fetch.Fetch(ctx, e.request)
 	if err != nil {
 		// Even if the request failed, we need to queue the next fetch
 		q.enqueueNextFetch(nil, e)
-		// TODO: queue next fetch
-		<-e.sem
 		return fmt.Errorf(`failed to fetch %q: %w`, e.request.URL, err)
 	}
 
 	q.enqueueNextFetch(res, e)
 
-	// TODO: queue next fetch
-	buf, err := io.ReadAll(res.Body)
-	defer res.Body.Close()
+	data, err := e.transform.Transform(res)
 	if err != nil {
-		<-e.sem
-		return fmt.Errorf(`failed to read body for %q: %w`, e.request.URL, err)
+		return fmt.Errorf(`failed to transform HTTP response for %q: %w`, e.request.URL, err)
 	}
-	e.data = buf
+	e.data = data
+
 	return nil
 }
 
-func (q *Queue) Enqueue(u string, interval time.Duration) error {
+func (q *queue) Enqueue(u string, interval time.Duration) error {
 	fireAt := time.Now().Add(interval).Round(time.Second)
 
 	list := q.list
@@ -266,7 +293,7 @@ func (q *Queue) Enqueue(u string, interval time.Duration) error {
 	return nil
 }
 
-func (q Queue) MarshalJSON() ([]byte, error) {
+func (q queue) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString(`{"list":[`)
 	q.mu.RLock()
@@ -281,7 +308,7 @@ func (q Queue) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (q *Queue) enqueueNextFetch(res *http.Response, e *entry) {
+func (q *queue) enqueueNextFetch(res *http.Response, e *entry) {
 	dur := calculateRefreshDuration(res, e)
 	q.Enqueue(e.request.URL, dur)
 }
