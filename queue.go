@@ -305,7 +305,7 @@ func (q *queue) Enqueue(u string, interval time.Duration) error {
 	return nil
 }
 
-func (q queue) MarshalJSON() ([]byte, error) {
+func (q *queue) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString(`{"list":[`)
 	q.mu.RLock()

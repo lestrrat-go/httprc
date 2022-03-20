@@ -2,7 +2,6 @@ package httprc
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 )
 
@@ -63,9 +62,6 @@ func (f *fetcher) Fetch(ctx context.Context, req *fetchRequest) (*http.Response,
 	case fr := <-reply:
 		return fr.Response, fr.Error
 	}
-
-	// There's no way the control can reach here
-	return nil, fmt.Errorf(`httprc.Fetcher.Fetch: should not get here`)
 }
 
 func runFetchWorker(ctx context.Context, incoming chan *fetchRequest) {
