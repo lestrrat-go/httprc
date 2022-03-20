@@ -3,11 +3,14 @@ package httprc
 import (
 	"context"
 	"net/http"
+	"sync"
 )
 
 // fetchRequest is a set of data that can be used to make an HTTP
 // request.
 type fetchRequest struct {
+	mu sync.Mutex
+
 	// Client contains the HTTP Client that can be used to make a
 	// request. By setting a custom *http.Client, you can for example
 	// provide a custom http.Transport
@@ -46,7 +49,9 @@ func newFetcher(ctx context.Context, nworkers int) *fetcher {
 // and returns the http.Response object.
 func (f *fetcher) Fetch(ctx context.Context, req *fetchRequest) (*http.Response, error) {
 	reply := make(chan *fetchResult)
+	req.mu.Lock()
 	req.reply = reply
+	req.mu.Unlock()
 
 	// Send a request to the backend
 	select {
@@ -80,7 +85,9 @@ LOOP:
 				break LOOP
 			case req.reply <- r:
 			}
+			req.mu.Lock()
 			close(req.reply)
+			req.mu.Unlock()
 		}
 	}
 }

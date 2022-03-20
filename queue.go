@@ -45,6 +45,7 @@ type rqentry struct {
 // long with optional specifications such as the *http.Client
 // object to use.
 type entry struct {
+	mu  sync.RWMutex
 	sem chan struct{}
 
 	lastFetch time.Time
@@ -91,6 +92,8 @@ func (e *entry) releaseSem() {
 }
 
 func (e *entry) hasBeenFetched() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return !e.lastFetch.IsZero()
 }
 
@@ -261,6 +264,9 @@ func (q *queue) refreshLoop(ctx context.Context) {
 }
 
 func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	// synchronously go fetch
 	e.lastFetch = time.Now()
 	res, err := q.fetch.Fetch(ctx, e.request)
