@@ -158,6 +158,17 @@ func (q *queue) Register(u string, options ...RegisterOption) {
 	q.mu.Unlock()
 }
 
+func (q *queue) Unregister(u string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	_, ok := q.registry[u]
+	if !ok {
+		return fmt.Errorf(`url %q has not been registered`, u)
+	}
+	delete(q.registry, u)
+	return nil
+}
+
 func (q *queue) getRegistered(u string) (*entry, bool) {
 	q.mu.RLock()
 	e, ok := q.registry[u]

@@ -77,9 +77,21 @@ func New(ctx context.Context, options ...ConstructorOption) *Cache {
 // accessed using `Get()` method.
 func (c *Cache) Register(u string, options ...RegisterOption) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.queue.Register(u, options...)
-	c.mu.Unlock()
 	return nil
+}
+
+func (c *Cache) Unregister(u string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.queue.Unregister(u)
+}
+
+func (c *Cache) IsRegistered(u string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.queue.IsRegistered(u)
 }
 
 func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
