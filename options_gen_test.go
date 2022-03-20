@@ -10,6 +10,7 @@ import (
 
 func TestOptionIdent(t *testing.T) {
 	require.Equal(t, "WithHTTPClient", identHTTPClient{}.String())
+	require.Equal(t, "WithMinRefreshInterval", identMinRefreshInterval{}.String())
 	require.Equal(t, "WithRefreshInterval", identRefreshInterval{}.String())
 	require.Equal(t, "WithRefreshWindow", identRefreshWindow{}.String())
 }

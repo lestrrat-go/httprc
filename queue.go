@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"net/http"
 	"sync"
 	"time"
+
+	"github.com/lestrrat-go/httpcc"
 )
 
 type rqentry struct {
@@ -47,7 +49,8 @@ type entry struct {
 	//    we use the expires value, otherwise the user-supplied minimum interval is used.
 	//
 	//    If all of the above fails, we used the user-supplied minimum interval
-	refreshInterval time.Duration
+	refreshInterval    time.Duration
+	minRefreshInterval time.Duration
 
 	request *FetchRequest
 	data    interface{}
@@ -86,6 +89,7 @@ func NewQueue(ctx context.Context, window time.Duration, fetch Fetcher) *Queue {
 		windowSize: window,
 		fetch:      fetch,
 		fetchCond:  sync.NewCond(fetchLocker),
+		registry:   make(map[string]*entry),
 	}
 
 	go rq.refreshLoop(ctx)
@@ -96,6 +100,7 @@ func NewQueue(ctx context.Context, window time.Duration, fetch Fetcher) *Queue {
 func (q *Queue) Register(u string, options ...RegisterOption) {
 	var refreshInterval time.Duration
 	var httpcl HTTPClient
+	minRefreshInterval := 15 * time.Minute
 	for _, option := range options {
 		//nolint:forcetypeassert
 		switch option.Ident() {
@@ -103,12 +108,15 @@ func (q *Queue) Register(u string, options ...RegisterOption) {
 			httpcl = option.Value().(HTTPClient)
 		case identRefreshInterval{}:
 			refreshInterval = option.Value().(time.Duration)
+		case identMinRefreshInterval{}:
+			minRefreshInterval = option.Value().(time.Duration)
 		}
 	}
 
 	e := entry{
-		sem:             make(chan struct{}, 1),
-		refreshInterval: refreshInterval,
+		sem:                make(chan struct{}, 1),
+		minRefreshInterval: minRefreshInterval,
+		refreshInterval:    refreshInterval,
 		request: &FetchRequest{
 			Client: httpcl,
 			URL:    u,
@@ -136,20 +144,25 @@ func (q *Queue) fetchLoop(ctx context.Context) {
 	for {
 		q.fetchCond.L.Lock()
 		for len(q.fetchQueue) <= 0 {
-			q.fetchCond.Wait()
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				q.fetchCond.Wait()
+			}
 		}
 		list := make([]*rqentry, len(q.fetchQueue))
 		copy(list, q.fetchQueue)
 		q.fetchQueue = q.fetchQueue[:0]
 		q.fetchCond.L.Unlock()
 
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
 		for _, rq := range list {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			e, ok := q.getRegistered(rq.url)
 			if !ok {
 				continue
@@ -165,34 +178,41 @@ func (q *Queue) refreshLoop(ctx context.Context) {
 	ticker := time.NewTicker(q.windowSize)
 
 	go q.fetchLoop(ctx)
+	defer q.fetchCond.Signal()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case t := <-ticker.C:
+			t = t.Round(time.Second)
 			// To avoid getting stuck here, we just copy the relevant
 			// items, and release the lock within this critical section
 			var list []*rqentry
 			q.mu.Lock()
 			var max int
 			for i, r := range q.list {
-				max = i
 				if r.fireAt.Before(t) || r.fireAt.Equal(t) {
+					max = i
 					list = append(list, r)
 					continue
 				}
 				break
 			}
-			// TODO: need to explicitly truncate every so often?
-			q.list = q.list[max+1:]
+
+			if len(list) > 0 {
+				q.list = q.list[max+1:]
+			}
 			q.mu.Unlock() // release lock
 
-			// Now we need to fetch these, but do this elsewhere so
-			// that we don't block this main loop
-			q.fetchCond.L.Lock()
-			q.fetchQueue = append(q.fetchQueue, list...)
-			q.fetchCond.L.Unlock()
+			if len(list) > 0 {
+				// Now we need to fetch these, but do this elsewhere so
+				// that we don't block this main loop
+				q.fetchCond.L.Lock()
+				q.fetchQueue = append(q.fetchQueue, list...)
+				q.fetchCond.L.Unlock()
+				q.fetchCond.Signal()
+			}
 		}
 	}
 }
@@ -203,10 +223,13 @@ func (q *Queue) fetchAndStore(ctx context.Context, e *entry) error {
 	res, err := q.fetch.Fetch(ctx, e.request)
 	if err != nil {
 		// Even if the request failed, we need to queue the next fetch
+		q.enqueueNextFetch(nil, e)
 		// TODO: queue next fetch
 		<-e.sem
 		return fmt.Errorf(`failed to fetch %q: %w`, e.request.URL, err)
 	}
+
+	q.enqueueNextFetch(res, e)
 
 	// TODO: queue next fetch
 	buf, err := io.ReadAll(res.Body)
@@ -220,7 +243,7 @@ func (q *Queue) fetchAndStore(ctx context.Context, e *entry) error {
 }
 
 func (q *Queue) Enqueue(u string, interval time.Duration) error {
-	fireAt := time.Now().Add(interval)
+	fireAt := time.Now().Add(interval).Round(time.Second)
 
 	list := q.list
 	ll := len(list)
@@ -255,6 +278,49 @@ func (q Queue) MarshalJSON() ([]byte, error) {
 	}
 	q.mu.RUnlock()
 	buf.WriteString(`]}`)
-	log.Printf("---->%q", buf.String())
 	return buf.Bytes(), nil
+}
+
+func (q *Queue) enqueueNextFetch(res *http.Response, e *entry) {
+	dur := calculateRefreshDuration(res, e)
+	q.Enqueue(e.request.URL, dur)
+}
+
+func calculateRefreshDuration(res *http.Response, e *entry) time.Duration {
+	if e.refreshInterval > 0 {
+		return e.refreshInterval
+	}
+
+	if res != nil {
+		if v := res.Header.Get(`Cache-Control`); v != "" {
+			dir, err := httpcc.ParseResponse(v)
+			if err == nil {
+				maxAge, ok := dir.MaxAge()
+				if ok {
+					resDuration := time.Duration(maxAge) * time.Second
+					if resDuration > e.minRefreshInterval {
+						return resDuration
+					}
+					return e.minRefreshInterval
+				}
+				// fallthrough
+			}
+			// fallthrough
+		}
+
+		if v := res.Header.Get(`Expires`); v != "" {
+			expires, err := http.ParseTime(v)
+			if err == nil {
+				resDuration := time.Until(expires)
+				if resDuration > e.minRefreshInterval {
+					return resDuration
+				}
+				return e.minRefreshInterval
+			}
+			// fallthrough
+		}
+	}
+
+	// Previous fallthroughs are a little redandunt, but hey, it's all good.
+	return e.minRefreshInterval
 }

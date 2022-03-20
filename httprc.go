@@ -35,9 +35,17 @@ type Cache struct {
 	// Cached(string) bool
 }
 
-func New(ctx context.Context) *Cache {
+func New(ctx context.Context, options ...NewOption) *Cache {
+	refreshWindow := 15 * time.Minute
+	for _, option := range options {
+		//nolint:forcetypeassert
+		switch option.Ident() {
+		case identRefreshWindow{}:
+			refreshWindow = option.Value().(time.Duration)
+		}
+	}
 	fetch := NewFetcher(ctx)
-	queue := NewQueue(ctx, 5*time.Minute, fetch)
+	queue := NewQueue(ctx, refreshWindow, fetch)
 
 	return &Cache{
 		queue: queue,

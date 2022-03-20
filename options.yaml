@@ -2,14 +2,17 @@ package_name: httprc
 output: options_gen.go
 interfaces:
   - name: RegisterOption
-  - name: MemoryCacheOption
+  - name: NewOption
 options:
   - ident: HTTPClient
     interface: RegisterOption
     argument_type: HTTPClient
+  - ident: MinRefreshInterval
+    interface: RegisterOption
+    argument_type: time.Duration
   - ident: RefreshInterval
     interface: RegisterOption
     argument_type: time.Duration
   - ident: RefreshWindow
-    interface: MemoryCacheOption
+    interface: NewOption
     argument_type: time.Duration

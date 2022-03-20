@@ -40,13 +40,15 @@ type fetcher struct {
 }
 
 func NewFetcher(ctx context.Context /*options ...FetcherOption*/) Fetcher {
-	var nworkers int
+	nworkers := 1
 
 	incoming := make(chan *FetchRequest)
 	for i := 0; i < nworkers; i++ {
 		go runFetchWorker(ctx, incoming)
 	}
-	return &fetcher{}
+	return &fetcher{
+		requests: incoming,
+	}
 }
 
 // Fetch requests that a HTTP request be made on behalf of the caller,

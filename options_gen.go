@@ -10,16 +10,16 @@ import (
 
 type Option = option.Interface
 
-type MemoryCacheOption interface {
+type NewOption interface {
 	Option
-	memoryCacheOption()
+	newOption()
 }
 
-type memoryCacheOption struct {
+type newOption struct {
 	Option
 }
 
-func (*memoryCacheOption) memoryCacheOption() {}
+func (*newOption) newOption() {}
 
 type RegisterOption interface {
 	Option
@@ -33,11 +33,16 @@ type registerOption struct {
 func (*registerOption) registerOption() {}
 
 type identHTTPClient struct{}
+type identMinRefreshInterval struct{}
 type identRefreshInterval struct{}
 type identRefreshWindow struct{}
 
 func (identHTTPClient) String() string {
 	return "WithHTTPClient"
+}
+
+func (identMinRefreshInterval) String() string {
+	return "WithMinRefreshInterval"
 }
 
 func (identRefreshInterval) String() string {
@@ -52,10 +57,14 @@ func WithHTTPClient(v HTTPClient) RegisterOption {
 	return &registerOption{option.New(identHTTPClient{}, v)}
 }
 
+func WithMinRefreshInterval(v time.Duration) RegisterOption {
+	return &registerOption{option.New(identMinRefreshInterval{}, v)}
+}
+
 func WithRefreshInterval(v time.Duration) RegisterOption {
 	return &registerOption{option.New(identRefreshInterval{}, v)}
 }
 
-func WithRefreshWindow(v time.Duration) MemoryCacheOption {
-	return &memoryCacheOption{option.New(identRefreshWindow{}, v)}
+func WithRefreshWindow(v time.Duration) NewOption {
+	return &newOption{option.New(identRefreshWindow{}, v)}
 }
