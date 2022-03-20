@@ -107,7 +107,9 @@ func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
 	e.acquireSem()
 	// has this entry been fetched?
 	if !e.hasBeenFetched() {
-		c.queue.fetchAndStore(ctx, e)
+		if err := c.queue.fetchAndStore(ctx, e); err != nil {
+			return nil, fmt.Errorf(`failed to fetch %q: %w`, e.request.URL, err)
+		}
 	}
 
 	e.releaseSem()

@@ -209,7 +209,8 @@ func (q *queue) fetchLoop(ctx context.Context) {
 			if !ok {
 				continue
 			}
-			q.fetchAndStore(ctx, e)
+			// TODO: send to error sink
+			_ = q.fetchAndStore(ctx, e)
 		}
 	}
 }
@@ -321,7 +322,8 @@ func (q queue) MarshalJSON() ([]byte, error) {
 
 func (q *queue) enqueueNextFetch(res *http.Response, e *entry) {
 	dur := calculateRefreshDuration(res, e)
-	q.Enqueue(e.request.URL, dur)
+	// TODO send to error sink
+	_ = q.Enqueue(e.request.URL, dur)
 }
 
 func calculateRefreshDuration(res *http.Response, e *entry) time.Duration {

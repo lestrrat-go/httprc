@@ -68,13 +68,15 @@ func (f *fetcher) Fetch(ctx context.Context, req *fetchRequest) (*http.Response,
 	return nil, fmt.Errorf(`httprc.Fetcher.Fetch: should not get here`)
 }
 
-func runFetchWorker(ctx context.Context, incoming chan *fetchRequest) error {
+func runFetchWorker(ctx context.Context, incoming chan *fetchRequest) {
 LOOP:
 	for {
 		select {
 		case <-ctx.Done():
 			break LOOP
 		case req := <-incoming:
+			// The body is handled by the consumer of the fetcher
+			//nolint:bodyclose
 			res, err := req.Client.Get(req.URL)
 			r := &fetchResult{Response: res, Error: err}
 			select {
@@ -85,5 +87,4 @@ LOOP:
 			close(req.reply)
 		}
 	}
-	return nil
 }
