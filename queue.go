@@ -23,6 +23,12 @@ type Transformer interface {
 	Transform(*http.Response) (interface{}, error)
 }
 
+type TransformFunc func(*http.Response) (interface{}, error)
+
+func (f TransformFunc) Transform(res *http.Response) (interface{}, error) {
+	return f(res)
+}
+
 // BodyBytes is the default Transformer applied to all resources
 type BodyBytes struct{}
 
