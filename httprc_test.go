@@ -32,11 +32,9 @@ func TestCache(t *testing.T) {
 	c := httprc.New(ctx, httprc.WithRefreshWindow(time.Second))
 
 	c.Register(srv.URL, httprc.WithHTTPClient(srv.Client()), httprc.WithMinRefreshInterval(time.Second))
-	/*
-		if !assert.True(t, c.IsRegistered(srv.URL)) {
-			return
-		}
-	*/
+	if !assert.True(t, c.IsRegistered(srv.URL)) {
+		return
+	}
 
 	for i := 0; i < 3; i++ {
 		_, err := c.Get(ctx, srv.URL)
@@ -60,6 +58,4 @@ func TestCache(t *testing.T) {
 	}
 
 	cancel()
-
-	time.Sleep(5 * time.Second)
 }
