@@ -117,5 +117,9 @@ func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
 
 	e.releaseSem()
 
-	return e.data, nil
+	e.mu.RLock()
+	data := e.data
+	e.nu.RUnlock()
+
+	return data, nil
 }
