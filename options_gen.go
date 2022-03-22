@@ -105,9 +105,9 @@ func WithHTTPClient(v HTTPClient) RegisterOption {
 // Finally, if neither of the above headers are present, we use the
 // value specified by this option as the interval until the next refresh.
 //
-// If unspecified, the minimum refresh interval is 1 hour
+// If unspecified, the minimum refresh interval is 1 hour.
 //
-// This value and the header values are ignored if `WithRefreshInterval` is specified
+// This value and the header values are ignored if `WithRefreshInterval` is specified.
 func WithMinRefreshInterval(v time.Duration) RegisterOption {
 	return &registerOption{option.New(identMinRefreshInterval{}, v)}
 }
@@ -118,6 +118,10 @@ func WithMinRefreshInterval(v time.Duration) RegisterOption {
 // Providing this option overrides the adaptive token refreshing based
 // on Cache-Control/Expires header (and `httprc.WithMinRefreshInterval`),
 // and refreshes will *always* happen in this interval.
+//
+// You generally do not want to make this value too small, as it can easily
+// be considered a DoS attack, and there is no backoff mechanism for failed
+// attempts.
 func WithRefreshInterval(v time.Duration) RegisterOption {
 	return &registerOption{option.New(identRefreshInterval{}, v)}
 }
@@ -129,6 +133,10 @@ func WithRefreshInterval(v time.Duration) RegisterOption {
 // refreshed within this window.
 //
 // The default value is 15 minutes.
+//
+// You generally do not want to make this value too small, as it can easily
+// be considered a DoS attack, and there is no backoff mechanism for failed
+// attempts.
 func WithRefreshWindow(v time.Duration) ConstructorOption {
 	return &constructorOption{option.New(identRefreshWindow{}, v)}
 }
