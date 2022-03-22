@@ -38,7 +38,9 @@ func (f TransformFunc) Transform(u string, res *http.Response) (interface{}, err
 	return f(u, res)
 }
 
-// BodyBytes is the default Transformer applied to all resources
+// BodyBytes is the default Transformer applied to all resources.
+// It takes an *http.Response object and extracts the body
+// of the response as `[]byte`
 type BodyBytes struct{}
 
 func (BodyBytes) Transform(_ string, res *http.Response) (interface{}, error) {
