@@ -22,3 +22,6 @@ options:
   - ident: RefreshWindow
     interface: ConstructorOption
     argument_type: time.Duration
+  - ident: ErrSink
+    interface: ConstructorOption
+    argument_type: ErrSink

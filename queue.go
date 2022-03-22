@@ -12,6 +12,15 @@ import (
 	"github.com/lestrrat-go/httpcc"
 )
 
+// ErrSink is an abstraction that allows users to consume errors
+// produced while the cache queue is running.
+type ErrSink interface {
+	// Error accepts errors produced during the cache queue's execution.
+	// The method should never block, otherwise the fetch loop may be
+	// paused for a prolonged amount of time.
+	Error(error)
+}
+
 // Transformer is responsible for converting an HTTP response
 // into an appropriate form of your choosing.
 type Transformer interface {
@@ -118,7 +127,7 @@ type queue struct {
 	list []*rqentry
 }
 
-func newQueue(ctx context.Context, window time.Duration, fetch *fetcher) *queue {
+func newQueue(ctx context.Context, window time.Duration, fetch *fetcher, errSink ErrSink) *queue {
 	fetchLocker := &sync.Mutex{}
 	rq := &queue{
 		windowSize: window,
@@ -127,7 +136,7 @@ func newQueue(ctx context.Context, window time.Duration, fetch *fetcher) *queue 
 		registry:   make(map[string]*entry),
 	}
 
-	go rq.refreshLoop(ctx)
+	go rq.refreshLoop(ctx, errSink)
 
 	return rq
 }
@@ -191,7 +200,7 @@ func (q *queue) IsRegistered(u string) bool {
 	return ok
 }
 
-func (q *queue) fetchLoop(ctx context.Context) {
+func (q *queue) fetchLoop(ctx context.Context, errSink ErrSink) {
 	for {
 		q.fetchCond.L.Lock()
 		for len(q.fetchQueue) <= 0 {
@@ -218,18 +227,21 @@ func (q *queue) fetchLoop(ctx context.Context) {
 			if !ok {
 				continue
 			}
-			// TODO: send to error sink
-			_ = q.fetchAndStore(ctx, e)
+			if err := q.fetchAndStore(ctx, e); err != nil {
+				if errSink != nil {
+					errSink.Error(err)
+				}
+			}
 		}
 	}
 }
 
 // This loop is responsible for periodically updating the cached content
-func (q *queue) refreshLoop(ctx context.Context) {
+func (q *queue) refreshLoop(ctx context.Context, errSink ErrSink) {
 	// Tick every q.windowSize duration.
 	ticker := time.NewTicker(q.windowSize)
 
-	go q.fetchLoop(ctx)
+	go q.fetchLoop(ctx, errSink)
 	defer q.fetchCond.Signal()
 
 	for {

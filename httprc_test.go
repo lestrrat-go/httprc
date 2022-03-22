@@ -5,12 +5,24 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/lestrrat-go/httprc"
 	"github.com/stretchr/testify/assert"
 )
+
+type dummyErrSink struct {
+	mu     sync.RWMutex
+	errors []error
+}
+
+func (d *dummyErrSink) Error(err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.errors = append(d.errors, err)
+}
 
 func TestCache(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -24,12 +36,16 @@ func TestCache(t *testing.T) {
 		default:
 		}
 
-		t.Logf("HTTP handler")
 		called++
 		w.Header().Set(`Cache-Control`, fmt.Sprintf(`max-age=%d`, 3))
 		w.WriteHeader(http.StatusOK)
 	}))
-	c := httprc.New(ctx, httprc.WithRefreshWindow(time.Second))
+
+	errSink := &dummyErrSink{}
+	c := httprc.New(ctx,
+		httprc.WithRefreshWindow(time.Second),
+		httprc.WithErrSink(errSink),
+	)
 
 	c.Register(srv.URL, httprc.WithHTTPClient(srv.Client()), httprc.WithMinRefreshInterval(time.Second))
 	if !assert.True(t, c.IsRegistered(srv.URL)) {
@@ -37,8 +53,11 @@ func TestCache(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		_, err := c.Get(ctx, srv.URL)
+		v, err := c.Get(ctx, srv.URL)
 		if !assert.NoError(t, err, `c.Get should succeed`) {
+			return
+		}
+		if !assert.IsType(t, []byte(nil), v, `c.Get should return []byte`) {
 			return
 		}
 	}
@@ -57,5 +76,23 @@ func TestCache(t *testing.T) {
 		return
 	}
 
+	if !assert.True(t, len(errSink.errors) == 0) {
+		return
+	}
+
+	c.Register(srv.URL,
+		httprc.WithHTTPClient(srv.Client()),
+		httprc.WithMinRefreshInterval(time.Second),
+		httprc.WithTransformer(httprc.TransformFunc(func(_ string, _ *http.Response) (interface{}, error) {
+			return nil, fmt.Errorf(`dummy error`)
+		})),
+	)
+
+	_, _ = c.Get(ctx, srv.URL)
+	time.Sleep(3 * time.Second)
+
+	if !assert.True(t, len(errSink.errors) > 0) {
+		return
+	}
 	cancel()
 }

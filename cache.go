@@ -44,6 +44,7 @@ const defaultRefreshWindow = 15 * time.Minute
 // number by specifying the `httprc.WithFetchWorkerCount`
 func New(ctx context.Context, options ...ConstructorOption) *Cache {
 	var refreshWindow time.Duration
+	var errSink ErrSink
 	var nfetchers int
 	for _, option := range options {
 		//nolint:forcetypeassert
@@ -52,6 +53,8 @@ func New(ctx context.Context, options ...ConstructorOption) *Cache {
 			refreshWindow = option.Value().(time.Duration)
 		case identFetchWorkerCount{}:
 			nfetchers = option.Value().(int)
+		case identErrSink{}:
+			errSink = option.Value().(ErrSink)
 		}
 	}
 
@@ -64,7 +67,7 @@ func New(ctx context.Context, options ...ConstructorOption) *Cache {
 	}
 
 	fetch := newFetcher(ctx, nfetchers)
-	queue := newQueue(ctx, refreshWindow, fetch)
+	queue := newQueue(ctx, refreshWindow, fetch, errSink)
 
 	return &Cache{
 		queue: queue,
