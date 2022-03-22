@@ -41,6 +41,7 @@ type identMinRefreshInterval struct{}
 type identRefreshInterval struct{}
 type identRefreshWindow struct{}
 type identTransformer struct{}
+type identWhitelist struct{}
 
 func (identErrSink) String() string {
 	return "WithErrSink"
@@ -68,6 +69,10 @@ func (identRefreshWindow) String() string {
 
 func (identTransformer) String() string {
 	return "WithTransformer"
+}
+
+func (identWhitelist) String() string {
+	return "WithWhitelist"
 }
 
 // WithErrSink specifies the `httprc.ErrSink` object that handles errors
@@ -146,4 +151,10 @@ func WithRefreshWindow(v time.Duration) ConstructorOption {
 // returns a `200 OK` status.
 func WithTransformer(v Transformer) RegisterOption {
 	return &registerOption{option.New(identTransformer{}, v)}
+}
+
+// WithWhitelist specifies the Whitelist object that can control which URLs can be
+// registered to the cache.
+func WithWhitelist(v Whitelist) ConstructorOption {
+	return &constructorOption{option.New(identWhitelist{}, v)}
 }

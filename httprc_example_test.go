@@ -3,7 +3,6 @@ package httprc_test
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -23,7 +22,7 @@ func Example() {
 	msg := helloWorld
 
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(`Cache-Control`, fmt.Sprintf(`max-age=%d`, 3))
+		w.Header().Set(`Cache-Control`, fmt.Sprintf(`max-age=%d`, 2))
 		w.WriteHeader(http.StatusOK)
 		mu.RLock()
 		fmt.Fprint(w, msg)
@@ -35,7 +34,7 @@ func Example() {
 	defer cancel()
 
 	errSink := httprc.ErrSinkFunc(func(err error) {
-		log.Printf("%s", err)
+		fmt.Printf("%s\n", err)
 	})
 
 	c := httprc.New(ctx,
@@ -43,16 +42,19 @@ func Example() {
 		httprc.WithRefreshWindow(time.Second), // force checks every second
 	)
 
-	c.Register(srv.URL, httprc.WithHTTPClient(srv.Client()))
+	c.Register(srv.URL,
+		httprc.WithHTTPClient(srv.Client()),        // we need client with TLS settings
+		httprc.WithMinRefreshInterval(time.Second), // allow max-age=1 (smallest)
+	)
 
 	payload, err := c.Get(ctx, srv.URL)
 	if err != nil {
-		log.Printf("%s", err)
+		fmt.Printf("%s\n", err)
 		return
 	}
 
 	if string(payload.([]byte)) != helloWorld {
-		log.Printf("payload mismatch: %s", payload)
+		fmt.Printf("payload mismatch: %s\n", payload)
 		return
 	}
 
@@ -64,12 +66,12 @@ func Example() {
 
 	payload, err = c.Get(ctx, srv.URL)
 	if err != nil {
-		log.Printf("%s", err)
+		fmt.Printf("%s\n", err)
 		return
 	}
 
 	if string(payload.([]byte)) != goodbyeWorld {
-		log.Printf("payload mismatch: %s", payload)
+		fmt.Printf("payload mismatch: %s\n", payload)
 		return
 	}
 

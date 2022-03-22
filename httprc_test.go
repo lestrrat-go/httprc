@@ -13,6 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestWhitelist(t *testing.T) {
+
+}
+
 type dummyErrSink struct {
 	mu     sync.RWMutex
 	errors []error

@@ -16,4 +16,5 @@ func TestOptionIdent(t *testing.T) {
 	require.Equal(t, "WithRefreshInterval", identRefreshInterval{}.String())
 	require.Equal(t, "WithRefreshWindow", identRefreshWindow{}.String())
 	require.Equal(t, "WithTransformer", identTransformer{}.String())
+	require.Equal(t, "WithWhitelist", identWhitelist{}.String())
 }

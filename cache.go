@@ -8,6 +8,24 @@ import (
 	"time"
 )
 
+// Whitelist is an interface for a set of URL whitelists. When provided
+// to fetching operations, urls are checked against this object, and
+// the object must return true for urls to be fetched.
+type Whitelist interface {
+	IsAllowed(string) bool
+}
+
+// WhitelistFunc is a httprc.Whitelist object based on a function.
+// You can perform any sort of check against the given URL to determine
+// if it can be fetched or not.
+type WhitelistFunc func(string) bool
+
+func (w WhitelistFunc) IsAllowed(u string) bool {
+	return w(u)
+}
+
+// ErrSink is an abstraction that allows users to consume errors
+// produced while the cache queue is running.
 type HTTPClient interface {
 	Get(string) (*http.Response, error)
 }
@@ -27,6 +45,7 @@ type HTTPClient interface {
 type Cache struct {
 	mu    sync.RWMutex
 	queue *queue
+	wl    Whitelist
 }
 
 const defaultRefreshWindow = 15 * time.Minute
@@ -52,6 +71,7 @@ func New(ctx context.Context, options ...ConstructorOption) *Cache {
 	var refreshWindow time.Duration
 	var errSink ErrSink
 	var nfetchers int
+	var wl Whitelist
 	for _, option := range options {
 		//nolint:forcetypeassert
 		switch option.Ident() {
@@ -61,6 +81,8 @@ func New(ctx context.Context, options ...ConstructorOption) *Cache {
 			nfetchers = option.Value().(int)
 		case identErrSink{}:
 			errSink = option.Value().(ErrSink)
+		case identWhitelist{}:
+			wl = option.Value().(Whitelist)
 		}
 	}
 
@@ -77,6 +99,7 @@ func New(ctx context.Context, options ...ConstructorOption) *Cache {
 
 	return &Cache{
 		queue: queue,
+		wl:    wl,
 	}
 }
 
@@ -87,6 +110,13 @@ func New(ctx context.Context, options ...ConstructorOption) *Cache {
 func (c *Cache) Register(u string, options ...RegisterOption) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if wl := c.wl; wl != nil {
+		if !wl.IsAllowed(u) {
+			return fmt.Errorf(`httprc.Cache: url %q has been rejected by whitelist`, u)
+		}
+	}
+
 	c.queue.Register(u, options...)
 	return nil
 }
