@@ -28,6 +28,7 @@ func TestCache(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var muCalled sync.Mutex
 	var called int
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -36,7 +37,9 @@ func TestCache(t *testing.T) {
 		default:
 		}
 
+		muCalled.Lock()
 		called++
+		muCalled.Unlock()
 		w.Header().Set(`Cache-Control`, fmt.Sprintf(`max-age=%d`, 3))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -61,9 +64,11 @@ func TestCache(t *testing.T) {
 			return
 		}
 	}
+	muCalled.Lock()
 	if !assert.Equal(t, 1, called, `there should only be one fetch request`) {
 		return
 	}
+	muCalled.Unlock()
 
 	time.Sleep(4 * time.Second)
 	for i := 0; i < 3; i++ {
@@ -72,9 +77,12 @@ func TestCache(t *testing.T) {
 			return
 		}
 	}
+
+	muCalled.Lock()
 	if !assert.Equal(t, 2, called, `there should only be one fetch request`) {
 		return
 	}
+	muCalled.Unlock()
 
 	if !assert.True(t, len(errSink.errors) == 0) {
 		return
