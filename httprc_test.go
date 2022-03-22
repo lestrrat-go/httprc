@@ -29,7 +29,7 @@ func TestCache(t *testing.T) {
 	defer cancel()
 
 	var called int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return

@@ -21,6 +21,12 @@ type ErrSink interface {
 	Error(error)
 }
 
+type ErrSinkFunc func(err error)
+
+func (f ErrSinkFunc) Error(err error) {
+	f(err)
+}
+
 // Transformer is responsible for converting an HTTP response
 // into an appropriate form of your choosing.
 type Transformer interface {
