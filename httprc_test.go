@@ -24,6 +24,12 @@ func (d *dummyErrSink) Error(err error) {
 	d.errors = append(d.errors, err)
 }
 
+func (d *dummyErrSink) getErrors() []error {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.errors
+}
+
 func TestCache(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -100,8 +106,7 @@ func TestCache(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	cancel()
 
-	time.Sleep(time.Second)
-	if !assert.True(t, len(errSink.errors) > 0) {
+	if !assert.True(t, len(errSink.getErrors()) > 0) {
 		return
 	}
 }
