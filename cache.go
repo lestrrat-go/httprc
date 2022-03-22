@@ -52,11 +52,15 @@ const defaultRefreshWindow = 15 * time.Minute
 
 // New creates a new Cache object.
 //
-// The context object in the argument controls the life-span of the
-// auto-refresh worker.
+// The context object in the argument controls the life-cycle of the
+// auto-refresh worker. If you cancel the `ctx`, then the automatic
+// refresh will stop working.
 //
 // Refresh will only be performed periodically where the interval between
-// refreshes are controlled by the `refresh window` variable.
+// refreshes are controlled by the `refresh window` variable. For example,
+// if the refresh window is every 5 minutes and the resource was queued
+// to be refreshed at 7 minutes, the resource will be refreshed after 10
+// minutes (in 2 refresh window time).
 //
 // The refresh window can be configured by using `httprc.WithRefreshWindow`
 // option. If you want refreshes to be performed more often, provide a smaller
