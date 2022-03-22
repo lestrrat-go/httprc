@@ -98,9 +98,10 @@ func TestCache(t *testing.T) {
 
 	_, _ = c.Get(ctx, srv.URL)
 	time.Sleep(3 * time.Second)
+	cancel()
 
+	time.Sleep(time.Second)
 	if !assert.True(t, len(errSink.errors) > 0) {
 		return
 	}
-	cancel()
 }
