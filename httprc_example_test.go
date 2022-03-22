@@ -51,7 +51,6 @@ func Example() {
 		return
 	}
 
-	//nolint:forcetypeassert
 	if string(payload.([]byte)) != helloWorld {
 		log.Printf("payload mismatch: %s", payload)
 		return
@@ -69,7 +68,6 @@ func Example() {
 		return
 	}
 
-	//nolint:forcetypeassert
 	if string(payload.([]byte)) != goodbyeWorld {
 		log.Printf("payload mismatch: %s", payload)
 		return
