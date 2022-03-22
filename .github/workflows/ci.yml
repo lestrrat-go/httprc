@@ -19,7 +19,7 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
       - name: Test
-        run: go test -v -race ./...
+        run: go test -v -race -coverprofile=coverage.out -coverpkg=./... ./...
       - name: Upload code coverage to codecov
         if: matrix.go == '1.17'
         uses: codecov/codecov-action@v1
