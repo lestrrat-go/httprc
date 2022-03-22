@@ -119,7 +119,7 @@ func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
 
 	e.mu.RLock()
 	data := e.data
-	e.nu.RUnlock()
+	e.mu.RUnlock()
 
 	return data, nil
 }
