@@ -31,7 +31,13 @@ type Cache struct {
 
 const defaultRefreshWindow = 15 * time.Minute
 
-// New creates a new Cache object
+// New creates a new Cache object.
+//
+// The context object in the argument controls the life-span of the
+// auto-refresh worker.
+//
+// Refresh will only be performed periodically where the interval between
+// refreshes are controlled by the `refresh window` variable.
 //
 // The refresh window can be configured by using `httprc.WithRefreshWindow`
 // option. If you want refreshes to be performed more often, provide a smaller
@@ -85,18 +91,29 @@ func (c *Cache) Register(u string, options ...RegisterOption) error {
 	return nil
 }
 
+// Unregister removes the given URL `u` from the cache.
+//
+// Subsequent calls to `Get()` will fail until `u` is registered again.
 func (c *Cache) Unregister(u string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.queue.Unregister(u)
 }
 
+// IsRegistered returns true if the given URL `u` has already been
+// registered in the system.
 func (c *Cache) IsRegistered(u string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.queue.IsRegistered(u)
 }
 
+// Get returns the cached object.
+//
+// The context.Context argument is used to control the timeout for
+// synchronous fetches, when they need to happen. Synchronous fetches
+// will be performed when the cache does not contain the specified
+// resource.
 func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
 	c.mu.RLock()
 	e, ok := c.queue.getRegistered(u)
