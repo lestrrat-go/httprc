@@ -4,6 +4,11 @@
 can be fetched via HTTP, but keep the cached content up-to-date based on periodic
 refreshing.
 
+# SYNOPSIS
+
+<!-- INCLUDE(httprc_example_test.go) -->
+<!-- END INCLUDE -->
+
 # Sequence Diagram
 
 ```mermaid

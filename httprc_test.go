@@ -24,19 +24,28 @@ func (d *dummyErrSink) Error(err error) {
 	d.errors = append(d.errors, err)
 }
 
+func (d *dummyErrSink) getErrors() []error {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.errors
+}
+
 func TestCache(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var muCalled sync.Mutex
 	var called int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
 
+		muCalled.Lock()
 		called++
+		muCalled.Unlock()
 		w.Header().Set(`Cache-Control`, fmt.Sprintf(`max-age=%d`, 3))
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -61,9 +70,11 @@ func TestCache(t *testing.T) {
 			return
 		}
 	}
+	muCalled.Lock()
 	if !assert.Equal(t, 1, called, `there should only be one fetch request`) {
 		return
 	}
+	muCalled.Unlock()
 
 	time.Sleep(4 * time.Second)
 	for i := 0; i < 3; i++ {
@@ -72,9 +83,12 @@ func TestCache(t *testing.T) {
 			return
 		}
 	}
+
+	muCalled.Lock()
 	if !assert.Equal(t, 2, called, `there should only be one fetch request`) {
 		return
 	}
+	muCalled.Unlock()
 
 	if !assert.True(t, len(errSink.errors) == 0) {
 		return
@@ -90,9 +104,9 @@ func TestCache(t *testing.T) {
 
 	_, _ = c.Get(ctx, srv.URL)
 	time.Sleep(3 * time.Second)
+	cancel()
 
-	if !assert.True(t, len(errSink.errors) > 0) {
+	if !assert.True(t, len(errSink.getErrors()) > 0) {
 		return
 	}
-	cancel()
 }
