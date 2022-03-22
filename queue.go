@@ -20,19 +20,19 @@ type Transformer interface {
 	//
 	// If you happen to use the response body, you are responsible
 	// for closing the body
-	Transform(*http.Response) (interface{}, error)
+	Transform(string, *http.Response) (interface{}, error)
 }
 
-type TransformFunc func(*http.Response) (interface{}, error)
+type TransformFunc func(string, *http.Response) (interface{}, error)
 
-func (f TransformFunc) Transform(res *http.Response) (interface{}, error) {
-	return f(res)
+func (f TransformFunc) Transform(u string, res *http.Response) (interface{}, error) {
+	return f(u, res)
 }
 
 // BodyBytes is the default Transformer applied to all resources
 type BodyBytes struct{}
 
-func (BodyBytes) Transform(res *http.Response) (interface{}, error) {
+func (BodyBytes) Transform(_ string, res *http.Response) (interface{}, error) {
 	buf, err := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 	if err != nil {
@@ -284,7 +284,7 @@ func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
 
 	q.enqueueNextFetch(res, e)
 
-	data, err := e.transform.Transform(res)
+	data, err := e.transform.Transform(e.request.URL, res)
 	if err != nil {
 		return fmt.Errorf(`failed to transform HTTP response for %q: %w`, e.request.URL, err)
 	}
