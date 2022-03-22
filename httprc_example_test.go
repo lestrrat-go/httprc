@@ -12,16 +12,21 @@ import (
 	"github.com/lestrrat-go/httprc"
 )
 
+const (
+	helloWorld   = `Hello World!`
+	goodbyeWorld = `Goodbye World!`
+)
+
 func Example() {
 	var mu sync.RWMutex
 
-	msg := `Hello World!`
+	msg := helloWorld
 
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(`Cache-Control`, fmt.Sprintf(`max-age=%d`, 3))
 		w.WriteHeader(http.StatusOK)
 		mu.RLock()
-		fmt.Fprintf(w, msg)
+		fmt.Fprint(w, msg)
 		mu.RUnlock()
 	}))
 	defer srv.Close()
@@ -47,13 +52,13 @@ func Example() {
 	}
 
 	//nolint:forcetypeassert
-	if string(payload.([]byte)) != `Hello World!` {
+	if string(payload.([]byte)) != helloWorld {
 		log.Printf("payload mismatch: %s", payload)
 		return
 	}
 
 	mu.Lock()
-	msg = `Goodbye World!`
+	msg = goodbyeWorld
 	mu.Unlock()
 
 	time.Sleep(4 * time.Second)
@@ -65,7 +70,7 @@ func Example() {
 	}
 
 	//nolint:forcetypeassert
-	if string(payload.([]byte)) != `Hello World!` {
+	if string(payload.([]byte)) != goodbyeWorld {
 		log.Printf("payload mismatch: %s", payload)
 		return
 	}
