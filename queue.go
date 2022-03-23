@@ -149,7 +149,7 @@ func newQueue(ctx context.Context, window time.Duration, fetch Fetcher, errSink 
 	return rq
 }
 
-func (q *queue) Register(u string, options ...RegisterOption) {
+func (q *queue) Register(u string, options ...RegisterOption) error {
 	var refreshInterval time.Duration
 	var client HTTPClient
 	var transform Transformer = BodyBytes{}
@@ -169,6 +169,14 @@ func (q *queue) Register(u string, options ...RegisterOption) {
 		}
 	}
 
+	q.mu.RLock()
+	rWindow := q.windowSize
+	q.mu.RUnlock()
+
+	if refreshInterval > 0 && refreshInterval < rWindow {
+		return fmt.Errorf(`refresh interval (%s) is smaller than refresh window (%s): this will not as expected`, refreshInterval, rWindow)
+	}
+
 	e := entry{
 		sem:                make(chan struct{}, 1),
 		minRefreshInterval: minRefreshInterval,
@@ -182,6 +190,7 @@ func (q *queue) Register(u string, options ...RegisterOption) {
 	q.mu.Lock()
 	q.registry[u] = &e
 	q.mu.Unlock()
+	return nil
 }
 
 func (q *queue) Unregister(u string) error {

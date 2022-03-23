@@ -99,8 +99,7 @@ func (c *Cache) Register(u string, options ...RegisterOption) error {
 		}
 	}
 
-	c.queue.Register(u, options...)
-	return nil
+	return c.queue.Register(u, options...)
 }
 
 // Unregister removes the given URL `u` from the cache.
