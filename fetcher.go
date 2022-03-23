@@ -157,7 +157,7 @@ LOOP:
 				for _, wl := range wls {
 					if !wl.IsAllowed(url) {
 						r := &fetchResult{
-							err: fmt.Errorf(`fetching url %q not allowed based on whitelist`, url),
+							err: fmt.Errorf(`fetching url %q rejected by whitelist`, url),
 						}
 						if err := r.reply(ctx, reply); err != nil {
 							break LOOP
