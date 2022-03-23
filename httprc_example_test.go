@@ -16,7 +16,7 @@ const (
 	goodbyeWorld = `Goodbye World!`
 )
 
-func Example() {
+func ExampleCache() {
 	var mu sync.RWMutex
 
 	msg := helloWorld
@@ -37,7 +37,7 @@ func Example() {
 		fmt.Printf("%s\n", err)
 	})
 
-	c := httprc.New(ctx,
+	c := httprc.NewCache(ctx,
 		httprc.WithErrSink(errSink),
 		httprc.WithRefreshWindow(time.Second), // force checks every second
 	)

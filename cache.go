@@ -8,22 +8,6 @@ import (
 	"time"
 )
 
-// Whitelist is an interface for a set of URL whitelists. When provided
-// to fetching operations, urls are checked against this object, and
-// the object must return true for urls to be fetched.
-type Whitelist interface {
-	IsAllowed(string) bool
-}
-
-// WhitelistFunc is a httprc.Whitelist object based on a function.
-// You can perform any sort of check against the given URL to determine
-// if it can be fetched or not.
-type WhitelistFunc func(string) bool
-
-func (w WhitelistFunc) IsAllowed(u string) bool {
-	return w(u)
-}
-
 // ErrSink is an abstraction that allows users to consume errors
 // produced while the cache queue is running.
 type HTTPClient interface {
@@ -70,23 +54,21 @@ const defaultRefreshWindow = 15 * time.Minute
 //
 // Internally the HTTP fetching is done using a pool of HTTP fetch
 // workers. The default number of workers is 3. You may change this
-// number by specifying the `httprc.WithFetchWorkerCount`
-func New(ctx context.Context, options ...ConstructorOption) *Cache {
+// number by specifying the `httprc.WithFetcherWorkerCount`
+func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 	var refreshWindow time.Duration
 	var errSink ErrSink
-	var nfetchers int
 	var wl Whitelist
+	var fetcherOptions []FetcherOption
 	for _, option := range options {
 		//nolint:forcetypeassert
 		switch option.Ident() {
 		case identRefreshWindow{}:
 			refreshWindow = option.Value().(time.Duration)
-		case identFetchWorkerCount{}:
-			nfetchers = option.Value().(int)
+		case identFetcherWorkerCount{}, identWhitelist{}:
+			fetcherOptions = append(fetcherOptions, option)
 		case identErrSink{}:
 			errSink = option.Value().(ErrSink)
-		case identWhitelist{}:
-			wl = option.Value().(Whitelist)
 		}
 	}
 
@@ -94,11 +76,7 @@ func New(ctx context.Context, options ...ConstructorOption) *Cache {
 		refreshWindow = defaultRefreshWindow
 	}
 
-	if nfetchers < 1 {
-		nfetchers = 3
-	}
-
-	fetch := newFetcher(ctx, nfetchers)
+	fetch := NewFetcher(ctx, fetcherOptions...)
 	queue := newQueue(ctx, refreshWindow, fetch, errSink)
 
 	return &Cache{
@@ -162,7 +140,7 @@ func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
 	// has this entry been fetched?
 	if !e.hasBeenFetched() {
 		if err := c.queue.fetchAndStore(ctx, e); err != nil {
-			return nil, fmt.Errorf(`failed to fetch %q: %w`, e.request.URL, err)
+			return nil, fmt.Errorf(`failed to fetch %q: %w`, u, err)
 		}
 	}
 

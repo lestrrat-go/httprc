@@ -2,24 +2,25 @@ package httprc
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 )
 
-// fetchRequest is a set of data that can be used to make an HTTP
-// request.
 type fetchRequest struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
-	// Client contains the HTTP Client that can be used to make a
+	// client contains the HTTP Client that can be used to make a
 	// request. By setting a custom *http.Client, you can for example
 	// provide a custom http.Transport
 	//
 	// If not specified, http.DefaultClient will be used.
-	Client HTTPClient
+	client HTTPClient
 
-	// URL contains the URL to be fetched
-	URL string
+	wl Whitelist
+
+	// u contains the URL to be fetched
+	url string
 
 	// reply is a field that is only used by the internals of the fetcher
 	// it is used to return the result of fetching
@@ -27,28 +28,83 @@ type fetchRequest struct {
 }
 
 type fetchResult struct {
-	Response *http.Response
-	Error    error
+	mu  sync.RWMutex
+	res *http.Response
+	err error
+}
+
+func (fr *fetchResult) reply(ctx context.Context, reply chan *fetchResult) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case reply <- fr:
+	}
+
+	close(reply)
+	return nil
 }
 
 type fetcher struct {
 	requests chan *fetchRequest
 }
 
-func newFetcher(ctx context.Context, nworkers int) *fetcher {
+type Fetcher interface {
+	Fetch(context.Context, string, ...FetchOption) (*http.Response, error)
+	fetch(context.Context, *fetchRequest) (*http.Response, error)
+}
+
+func NewFetcher(ctx context.Context, options ...FetcherOption) Fetcher {
+	var nworkers int
+	var wl Whitelist
+	for _, option := range options {
+		//nolint:forcetypeassert
+		switch option.Ident() {
+		case identFetcherWorkerCount{}:
+			nworkers = option.Value().(int)
+		case identWhitelist{}:
+			wl = option.Value().(Whitelist)
+		}
+	}
+
+	if nworkers < 1 {
+		nworkers = 3
+	}
+
 	incoming := make(chan *fetchRequest)
 	for i := 0; i < nworkers; i++ {
-		go runFetchWorker(ctx, incoming)
+		go runFetchWorker(ctx, incoming, wl)
 	}
 	return &fetcher{
 		requests: incoming,
 	}
 }
 
-// Fetch requests that a HTTP request be made on behalf of the caller,
-// and returns the http.Response object.
-func (f *fetcher) Fetch(ctx context.Context, req *fetchRequest) (*http.Response, error) {
-	reply := make(chan *fetchResult)
+func (f *fetcher) Fetch(ctx context.Context, u string, options ...FetchOption) (*http.Response, error) {
+	var client HTTPClient
+	var wl Whitelist
+	for _, option := range options {
+		//nolint:forcetypeassert
+		switch option.Ident() {
+		case identHTTPClient{}:
+			client = option.Value().(HTTPClient)
+		case identWhitelist{}:
+			wl = option.Value().(Whitelist)
+		}
+	}
+
+	req := fetchRequest{
+		client: client,
+		url:    u,
+		wl:     wl,
+	}
+
+	return f.fetch(ctx, &req)
+}
+
+// fetch (unexported) is the main fetching implemntation.
+// it allows the caller to reuse the same *fetchRequest object
+func (f *fetcher) fetch(ctx context.Context, req *fetchRequest) (*http.Response, error) {
+	reply := make(chan *fetchResult, 1)
 	req.mu.Lock()
 	req.reply = reply
 	req.mu.Unlock()
@@ -65,29 +121,62 @@ func (f *fetcher) Fetch(ctx context.Context, req *fetchRequest) (*http.Response,
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case fr := <-reply:
-		return fr.Response, fr.Error
+		fr.mu.RLock()
+		res := fr.res
+		err := fr.err
+		fr.mu.RUnlock()
+		return res, err
 	}
 }
 
-func runFetchWorker(ctx context.Context, incoming chan *fetchRequest) {
+func runFetchWorker(ctx context.Context, incoming chan *fetchRequest, wl Whitelist) {
 LOOP:
 	for {
 		select {
 		case <-ctx.Done():
 			break LOOP
 		case req := <-incoming:
+			req.mu.RLock()
+			reply := req.reply
+			client := req.client
+			if client == nil {
+				client = http.DefaultClient
+			}
+			url := req.url
+			reqwl := req.wl
+			req.mu.RUnlock()
+
+			var wls []Whitelist
+			for _, v := range []Whitelist{wl, reqwl} {
+				if v != nil {
+					wls = append(wls, v)
+				}
+			}
+
+			if len(wls) > 0 {
+				for _, wl := range wls {
+					if !wl.IsAllowed(url) {
+						r := &fetchResult{
+							err: fmt.Errorf(`fetching url %q not allowed based on whitelist`, url),
+						}
+						if err := r.reply(ctx, reply); err != nil {
+							break LOOP
+						}
+						return
+					}
+				}
+			}
+
 			// The body is handled by the consumer of the fetcher
 			//nolint:bodyclose
-			res, err := req.Client.Get(req.URL)
-			r := &fetchResult{Response: res, Error: err}
-			select {
-			case <-ctx.Done():
-				break LOOP
-			case req.reply <- r:
+			res, err := client.Get(url)
+			r := &fetchResult{
+				res: res,
+				err: err,
 			}
-			req.mu.Lock()
-			close(req.reply)
-			req.mu.Unlock()
+			if err := r.reply(ctx, reply); err != nil {
+				break LOOP
+			}
 		}
 	}
 }
