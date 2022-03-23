@@ -7,3 +7,16 @@
 // based on the user-specified intervals and HTTP `Expires` and
 // `Cache-Control` headers, thus keeping the entries _relatively_ fresh.
 package httprc
+
+import "fmt"
+
+// RefreshError is the underlying error type that is sent to
+// the `httprc.ErrSink` objects
+type RefreshError struct {
+	URL string
+	Err error
+}
+
+func (re *RefreshError) Error() string {
+	return fmt.Sprintf(`refresh error (%q): %s`, re.URL, re.Err)
+}

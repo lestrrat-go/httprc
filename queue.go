@@ -237,7 +237,10 @@ func (q *queue) fetchLoop(ctx context.Context, errSink ErrSink) {
 			}
 			if err := q.fetchAndStore(ctx, e); err != nil {
 				if errSink != nil {
-					errSink.Error(err)
+					errSink.Error(&RefreshError{
+						URL: rq.url,
+						Err: err,
+					})
 				}
 			}
 		}
