@@ -403,3 +403,31 @@ func calculateRefreshDuration(res *http.Response, e *entry) time.Duration {
 	// Previous fallthroughs are a little redandunt, but hey, it's all good.
 	return e.minRefreshInterval
 }
+
+type SnapshotEntry struct {
+	URL         string      `json:"url"`
+	Data        interface{} `json:"data"`
+	LastFetched time.Time   `json:"last_fetched"`
+}
+type Snapshot struct {
+	Entries []SnapshotEntry `json:"entries"`
+}
+
+// Snapshot returns the contents of the cache at the given moment.
+func (q *queue) snapshot() (*Snapshot, error) {
+	q.mu.RLock()
+	list := make([]SnapshotEntry, 0, len(q.registry))
+
+	for url, e := range q.registry {
+		list = append(list, SnapshotEntry{
+			URL:         url,
+			LastFetched: e.lastFetch,
+			Data:        e.data,
+		})
+	}
+	q.mu.RUnlock()
+
+	return &Snapshot{
+		Entries: list,
+	}, nil
+}
