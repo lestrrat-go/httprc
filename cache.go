@@ -135,7 +135,7 @@ func (c *Cache) Unregister(u string) error {
 }
 
 // IsRegistered returns true if the given URL `u` has already been
-// registered in the system.
+// registered in the cache.
 func (c *Cache) IsRegistered(u string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
