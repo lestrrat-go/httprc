@@ -153,7 +153,7 @@ func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
 	return data, nil
 }
 
-func (c *Cache) Snapshot() (*Snapshot, error) {
+func (c *Cache) Snapshot() *Snapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.queue.snapshot()

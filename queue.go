@@ -414,7 +414,7 @@ type Snapshot struct {
 }
 
 // Snapshot returns the contents of the cache at the given moment.
-func (q *queue) snapshot() (*Snapshot, error) {
+func (q *queue) snapshot() *Snapshot {
 	q.mu.RLock()
 	list := make([]SnapshotEntry, 0, len(q.registry))
 
@@ -429,5 +429,5 @@ func (q *queue) snapshot() (*Snapshot, error) {
 
 	return &Snapshot{
 		Entries: list,
-	}, nil
+	}
 }
