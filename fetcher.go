@@ -162,7 +162,7 @@ LOOP:
 						if err := r.reply(ctx, reply); err != nil {
 							break LOOP
 						}
-						return
+						continue LOOP
 					}
 				}
 			}
