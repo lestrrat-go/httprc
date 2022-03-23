@@ -119,6 +119,12 @@ func (c *Cache) IsRegistered(u string) bool {
 	return c.queue.IsRegistered(u)
 }
 
+// Refresh is identical to Get(), except it always fetches the
+// specified resource anew, and updates the cached content
+func (c *Cache) Refresh(ctx context.Context, u string) (interface{}, error) {
+	return c.getOrFetch(ctx, u, true)
+}
+
 // Get returns the cached object.
 //
 // The context.Context argument is used to control the timeout for
@@ -126,6 +132,10 @@ func (c *Cache) IsRegistered(u string) bool {
 // will be performed when the cache does not contain the specified
 // resource.
 func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
+	return c.getOrFetch(ctx, u, false)
+}
+
+func (c *Cache) getOrFetch(ctx context.Context, u string, forceRefresh bool) (interface{}, error) {
 	c.mu.RLock()
 	e, ok := c.queue.getRegistered(u)
 	if !ok {
@@ -136,8 +146,10 @@ func (c *Cache) Get(ctx context.Context, u string) (interface{}, error) {
 
 	// Only one goroutine may enter this section.
 	e.acquireSem()
-	// has this entry been fetched?
-	if !e.hasBeenFetched() {
+
+	// has this entry been fetched? (but ignore and do a fetch
+	// if forceRefresh is true)
+	if forceRefresh || !e.hasBeenFetched() {
 		if err := c.queue.fetchAndStore(ctx, e); err != nil {
 			return nil, fmt.Errorf(`failed to fetch %q: %w`, u, err)
 		}
