@@ -15,6 +15,10 @@ interfaces:
   - name: FetchOption
     comment: |
       FetchOption describes options that can be passed to `(httprc.Fetcher).Fetch()`
+  - name: FetcherRegisterOption
+    methods:
+      - fetcherOption
+      - registerOption
 options:
   - ident: FetcherWorkerCount
     interface: FetcherOption
@@ -23,7 +27,7 @@ options:
       WithFetchWorkerCount specifies the number of HTTP fetch workers that are spawned
       in the backend. By default 3 workers are spawned.
   - ident: Whitelist
-    interface: FetcherOption
+    interface: FetcherRegisterOption
     argument_type: Whitelist
     comment: |
       WithWhitelist specifies the Whitelist object that can control which URLs are

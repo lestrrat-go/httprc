@@ -46,6 +46,20 @@ type fetcherOption struct {
 
 func (*fetcherOption) cacheOption() {}
 
+type FetcherRegisterOption interface {
+	Option
+	fetcherOption()
+	registerOption()
+}
+
+type fetcherRegisterOption struct {
+	Option
+}
+
+func (*fetcherRegisterOption) fetcherOption() {}
+
+func (*fetcherRegisterOption) registerOption() {}
+
 // RegisterOption desribes options that can be passed to `(httprc.Cache).Register()`
 type RegisterOption interface {
 	Option
@@ -185,6 +199,6 @@ func WithTransformer(v Transformer) RegisterOption {
 // basis using `(httprc.Cache).Register()`. If both are specified,
 // the url must fulfill _both_ the cache-wide whitelist and the per-URL
 // whitelist.
-func WithWhitelist(v Whitelist) FetcherOption {
-	return &fetcherOption{option.New(identWhitelist{}, v)}
+func WithWhitelist(v Whitelist) FetcherRegisterOption {
+	return &fetcherRegisterOption{option.New(identWhitelist{}, v)}
 }

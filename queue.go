@@ -152,6 +152,7 @@ func newQueue(ctx context.Context, window time.Duration, fetch Fetcher, errSink 
 func (q *queue) Register(u string, options ...RegisterOption) error {
 	var refreshInterval time.Duration
 	var client HTTPClient
+	var wl Whitelist
 	var transform Transformer = BodyBytes{}
 
 	minRefreshInterval := 15 * time.Minute
@@ -166,6 +167,8 @@ func (q *queue) Register(u string, options ...RegisterOption) error {
 			minRefreshInterval = option.Value().(time.Duration)
 		case identTransformer{}:
 			transform = option.Value().(Transformer)
+		case identWhitelist{}:
+			wl = option.Value().(Whitelist)
 		}
 	}
 
@@ -185,6 +188,7 @@ func (q *queue) Register(u string, options ...RegisterOption) error {
 		request: &fetchRequest{
 			client: client,
 			url:    u,
+			wl:     wl,
 		},
 	}
 	q.mu.Lock()
