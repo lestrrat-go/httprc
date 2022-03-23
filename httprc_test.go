@@ -13,10 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestWhitelist(t *testing.T) {
-
-}
-
 type dummyErrSink struct {
 	mu     sync.RWMutex
 	errors []error
@@ -55,7 +51,7 @@ func TestCache(t *testing.T) {
 	}))
 
 	errSink := &dummyErrSink{}
-	c := httprc.New(ctx,
+	c := httprc.NewCache(ctx,
 		httprc.WithRefreshWindow(time.Second),
 		httprc.WithErrSink(errSink),
 	)

@@ -10,17 +10,41 @@ import (
 
 type Option = option.Interface
 
-// ConstructorOption desribes options that can be passed to `New()`
-type ConstructorOption interface {
+// CacheOption desribes options that can be passed to `New()`
+type CacheOption interface {
 	Option
-	constructorOption()
+	cacheOption()
 }
 
-type constructorOption struct {
+type cacheOption struct {
 	Option
 }
 
-func (*constructorOption) constructorOption() {}
+func (*cacheOption) cacheOption() {}
+
+// FetchOption describes options that can be passed to `(httprc.Fetcher).Fetch()`
+type FetchOption interface {
+	Option
+	fetchOption()
+}
+
+type fetchOption struct {
+	Option
+}
+
+func (*fetchOption) fetchOption() {}
+
+// FetcherOption describes options that can be passed to `(httprc.Fetcher).NewFetcher()`
+type FetcherOption interface {
+	Option
+	cacheOption()
+}
+
+type fetcherOption struct {
+	Option
+}
+
+func (*fetcherOption) cacheOption() {}
 
 // RegisterOption desribes options that can be passed to `(httprc.Cache).Register()`
 type RegisterOption interface {
@@ -35,7 +59,7 @@ type registerOption struct {
 func (*registerOption) registerOption() {}
 
 type identErrSink struct{}
-type identFetchWorkerCount struct{}
+type identFetcherWorkerCount struct{}
 type identHTTPClient struct{}
 type identMinRefreshInterval struct{}
 type identRefreshInterval struct{}
@@ -47,8 +71,8 @@ func (identErrSink) String() string {
 	return "WithErrSink"
 }
 
-func (identFetchWorkerCount) String() string {
-	return "WithFetchWorkerCount"
+func (identFetcherWorkerCount) String() string {
+	return "WithFetcherWorkerCount"
 }
 
 func (identHTTPClient) String() string {
@@ -78,14 +102,14 @@ func (identWhitelist) String() string {
 // WithErrSink specifies the `httprc.ErrSink` object that handles errors
 // that occurred during the cache's execution. For example, you will be
 // able to intercept errors that occurred during the execution of Transformers.
-func WithErrSink(v ErrSink) ConstructorOption {
-	return &constructorOption{option.New(identErrSink{}, v)}
+func WithErrSink(v ErrSink) CacheOption {
+	return &cacheOption{option.New(identErrSink{}, v)}
 }
 
 // WithFetchWorkerCount specifies the number of HTTP fetch workers that are spawned
 // in the backend. By default 3 workers are spawned.
-func WithFetchWorkerCount(v int) ConstructorOption {
-	return &constructorOption{option.New(identFetchWorkerCount{}, v)}
+func WithFetcherWorkerCount(v int) FetcherOption {
+	return &fetcherOption{option.New(identFetcherWorkerCount{}, v)}
 }
 
 // WithHTTPClient specififes the HTTP Client object that should be used to fetch
@@ -142,8 +166,8 @@ func WithRefreshInterval(v time.Duration) RegisterOption {
 // You generally do not want to make this value too small, as it can easily
 // be considered a DoS attack, and there is no backoff mechanism for failed
 // attempts.
-func WithRefreshWindow(v time.Duration) ConstructorOption {
-	return &constructorOption{option.New(identRefreshWindow{}, v)}
+func WithRefreshWindow(v time.Duration) CacheOption {
+	return &cacheOption{option.New(identRefreshWindow{}, v)}
 }
 
 // WithTransformer specifies the `httprc.Transformer` object that should be applied
@@ -153,8 +177,14 @@ func WithTransformer(v Transformer) RegisterOption {
 	return &registerOption{option.New(identTransformer{}, v)}
 }
 
-// WithWhitelist specifies the Whitelist object that can control which URLs can be
-// registered to the cache.
-func WithWhitelist(v Whitelist) ConstructorOption {
-	return &constructorOption{option.New(identWhitelist{}, v)}
+// WithWhitelist specifies the Whitelist object that can control which URLs are
+// allowed to be processed.
+//
+// It can be passed to `httprc.NewCache` as a whitelist applied to all
+// URLs that are fetched by the cache, or it can be passed on a per-URL
+// basis using `(httprc.Cache).Register()`. If both are specified,
+// the url must fulfill _both_ the cache-wide whitelist and the per-URL
+// whitelist.
+func WithWhitelist(v Whitelist) FetcherOption {
+	return &fetcherOption{option.New(identWhitelist{}, v)}
 }

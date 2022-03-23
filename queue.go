@@ -125,7 +125,7 @@ type queue struct {
 	mu         sync.RWMutex
 	registry   map[string]*entry
 	windowSize time.Duration
-	fetch      *fetcher
+	fetch      Fetcher
 	fetchCond  *sync.Cond
 	fetchQueue []*rqentry
 
@@ -135,7 +135,7 @@ type queue struct {
 	list []*rqentry
 }
 
-func newQueue(ctx context.Context, window time.Duration, fetch *fetcher, errSink ErrSink) *queue {
+func newQueue(ctx context.Context, window time.Duration, fetch Fetcher, errSink ErrSink) *queue {
 	fetchLocker := &sync.Mutex{}
 	rq := &queue{
 		windowSize: window,
@@ -151,7 +151,7 @@ func newQueue(ctx context.Context, window time.Duration, fetch *fetcher, errSink
 
 func (q *queue) Register(u string, options ...RegisterOption) {
 	var refreshInterval time.Duration
-	var httpcl HTTPClient
+	var client HTTPClient
 	var transform Transformer = BodyBytes{}
 
 	minRefreshInterval := 15 * time.Minute
@@ -159,7 +159,7 @@ func (q *queue) Register(u string, options ...RegisterOption) {
 		//nolint:forcetypeassert
 		switch option.Ident() {
 		case identHTTPClient{}:
-			httpcl = option.Value().(HTTPClient)
+			client = option.Value().(HTTPClient)
 		case identRefreshInterval{}:
 			refreshInterval = option.Value().(time.Duration)
 		case identMinRefreshInterval{}:
@@ -175,8 +175,8 @@ func (q *queue) Register(u string, options ...RegisterOption) {
 		transform:          transform,
 		refreshInterval:    refreshInterval,
 		request: &fetchRequest{
-			Client: httpcl,
-			URL:    u,
+			client: client,
+			url:    u,
 		},
 	}
 	q.mu.Lock()
@@ -298,18 +298,18 @@ func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
 
 	// synchronously go fetch
 	e.lastFetch = time.Now()
-	res, err := q.fetch.Fetch(ctx, e.request)
+	res, err := q.fetch.fetch(ctx, e.request)
 	if err != nil {
 		// Even if the request failed, we need to queue the next fetch
 		q.enqueueNextFetch(nil, e)
-		return fmt.Errorf(`failed to fetch %q: %w`, e.request.URL, err)
+		return fmt.Errorf(`failed to fetch %q: %w`, e.request.url, err)
 	}
 
 	q.enqueueNextFetch(res, e)
 
-	data, err := e.transform.Transform(e.request.URL, res)
+	data, err := e.transform.Transform(e.request.url, res)
 	if err != nil {
-		return fmt.Errorf(`failed to transform HTTP response for %q: %w`, e.request.URL, err)
+		return fmt.Errorf(`failed to transform HTTP response for %q: %w`, e.request.url, err)
 	}
 	e.data = data
 
@@ -362,7 +362,7 @@ func (q *queue) MarshalJSON() ([]byte, error) {
 func (q *queue) enqueueNextFetch(res *http.Response, e *entry) {
 	dur := calculateRefreshDuration(res, e)
 	// TODO send to error sink
-	_ = q.Enqueue(e.request.URL, dur)
+	_ = q.Enqueue(e.request.url, dur)
 }
 
 func calculateRefreshDuration(res *http.Response, e *entry) time.Duration {

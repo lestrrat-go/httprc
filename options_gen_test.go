@@ -10,7 +10,7 @@ import (
 
 func TestOptionIdent(t *testing.T) {
 	require.Equal(t, "WithErrSink", identErrSink{}.String())
-	require.Equal(t, "WithFetchWorkerCount", identFetchWorkerCount{}.String())
+	require.Equal(t, "WithFetcherWorkerCount", identFetcherWorkerCount{}.String())
 	require.Equal(t, "WithHTTPClient", identHTTPClient{}.String())
 	require.Equal(t, "WithMinRefreshInterval", identMinRefreshInterval{}.String())
 	require.Equal(t, "WithRefreshInterval", identRefreshInterval{}.String())

@@ -4,22 +4,36 @@ interfaces:
   - name: RegisterOption
     comment: |
       RegisterOption desribes options that can be passed to `(httprc.Cache).Register()`
-  - name: ConstructorOption
+  - name: CacheOption
     comment: |
-      ConstructorOption desribes options that can be passed to `New()`
+      CacheOption desribes options that can be passed to `New()`
+  - name: FetcherOption
+    methods:
+      - cacheOption
+    comment: |
+      FetcherOption describes options that can be passed to `(httprc.Fetcher).NewFetcher()`
+  - name: FetchOption
+    comment: |
+      FetchOption describes options that can be passed to `(httprc.Fetcher).Fetch()`
 options:
-  - ident: FetchWorkerCount
-    interface: ConstructorOption
+  - ident: FetcherWorkerCount
+    interface: FetcherOption
     argument_type: int
     comment: |
       WithFetchWorkerCount specifies the number of HTTP fetch workers that are spawned
       in the backend. By default 3 workers are spawned.
   - ident: Whitelist
-    interface: ConstructorOption
+    interface: FetcherOption
     argument_type: Whitelist
     comment: |
-      WithWhitelist specifies the Whitelist object that can control which URLs can be
-      registered to the cache.
+      WithWhitelist specifies the Whitelist object that can control which URLs are
+      allowed to be processed.
+
+      It can be passed to `httprc.NewCache` as a whitelist applied to all
+      URLs that are fetched by the cache, or it can be passed on a per-URL
+      basis using `(httprc.Cache).Register()`. If both are specified,
+      the url must fulfill _both_ the cache-wide whitelist and the per-URL
+      whitelist.
   - ident: Transformer
     interface: RegisterOption
     argument_type: Transformer
@@ -71,7 +85,7 @@ options:
       be considered a DoS attack, and there is no backoff mechanism for failed
       attempts.
   - ident: RefreshWindow
-    interface: ConstructorOption
+    interface: CacheOption
     argument_type: time.Duration
     comment: |
       WithRefreshWindow specifies the interval between checks for refreshes.
@@ -86,7 +100,7 @@ options:
       be considered a DoS attack, and there is no backoff mechanism for failed
       attempts.
   - ident: ErrSink
-    interface: ConstructorOption
+    interface: CacheOption
     argument_type: ErrSink
     comment: |
       WithErrSink specifies the `httprc.ErrSink` object that handles errors
