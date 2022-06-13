@@ -151,6 +151,7 @@ func (c *Cache) getOrFetch(ctx context.Context, u string, forceRefresh bool) (in
 	// if forceRefresh is true)
 	if forceRefresh || !e.hasBeenFetched() {
 		if err := c.queue.fetchAndStore(ctx, e); err != nil {
+			e.releaseSem()
 			return nil, fmt.Errorf(`failed to fetch %q: %w`, u, err)
 		}
 	}
