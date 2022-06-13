@@ -1,6 +1,9 @@
 Changes
 =======
 
+v1.0.2 13 Jun 2022
+  * Properly release a lock when the fetch fails (#5)
+
 v1.0.1 29 Mar 2022
   * Bump dependency for github.com/lestrrat-go/httpcc to v1.0.1
 
