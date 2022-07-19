@@ -43,6 +43,7 @@ linters:
     - tagliatelle
     - testpackage
     - thelper
+    - varnamelen # short names are ok
     - wrapcheck
     - wsl
 
