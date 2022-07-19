@@ -17,6 +17,10 @@ type dummyFetcher struct {
 	srv *httptest.Server
 }
 
+func (f *dummyFetcher) Fetch(_ context.Context, _ string, _ ...FetchOption) (*http.Response, error) {
+	panic("unimplemented")
+}
+
 // URLs must be for f.srv
 func (f *dummyFetcher) fetch(_ context.Context, fr *fetchRequest) (*http.Response, error) {
 	//nolint:noctx
