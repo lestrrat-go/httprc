@@ -49,6 +49,7 @@ type fetcher struct {
 }
 
 type Fetcher interface {
+	Fetch(context.Context, string, ...FetchOption) (*http.Response, error)
 	fetch(context.Context, *fetchRequest) (*http.Response, error)
 }
 
