@@ -19,6 +19,7 @@ type dummyFetcher struct {
 
 // URLs must be for f.srv
 func (f *dummyFetcher) fetch(_ context.Context, fr *fetchRequest) (*http.Response, error) {
+	//nolint:noctx
 	return f.srv.Client().Get(fr.url)
 }
 
