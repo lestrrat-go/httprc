@@ -1,6 +1,9 @@
 Changes
 =======
 
+v1.0.3 UNRELEASED
+  * Fix queue insertion in the middle of the queue (#7)
+
 v1.0.2 13 Jun 2022
   * Properly release a lock when the fetch fails (#5)
 
