@@ -1,7 +1,7 @@
 Changes
 =======
 
-v1.0.3 UNRELEASED
+v1.0.3 19 Jul 2022
   * Fix queue insertion in the middle of the queue (#7)
 
 v1.0.2 13 Jun 2022
