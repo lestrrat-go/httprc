@@ -1,6 +1,9 @@
 Changes
 =======
 
+v1.0.4 UNRELEASED
+  * Fix sloppy API breakage
+
 v1.0.3 19 Jul 2022
   * Fix queue insertion in the middle of the queue (#7)
 
