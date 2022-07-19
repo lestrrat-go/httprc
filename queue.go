@@ -133,6 +133,17 @@ type queue struct {
 	// when we get a new tick in the RQ loop, we process everything
 	// that can be fired up to the point the tick was called
 	list []*rqentry
+
+	// clock is really only used by testing
+	clock interface {
+		Now() time.Time
+	}
+}
+
+type clockFunc func() time.Time
+
+func (cf clockFunc) Now() time.Time {
+	return cf()
 }
 
 func newQueue(ctx context.Context, window time.Duration, fetch Fetcher, errSink ErrSink) *queue {
@@ -142,6 +153,7 @@ func newQueue(ctx context.Context, window time.Duration, fetch Fetcher, errSink 
 		fetch:      fetch,
 		fetchCond:  sync.NewCond(fetchLocker),
 		registry:   make(map[string]*entry),
+		clock:      clockFunc(time.Now),
 	}
 
 	go rq.refreshLoop(ctx, errSink)
@@ -330,7 +342,7 @@ func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
 }
 
 func (q *queue) Enqueue(u string, interval time.Duration) error {
-	fireAt := time.Now().Add(interval).Round(time.Second)
+	fireAt := q.clock.Now().Add(interval).Round(time.Second)
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -347,7 +359,8 @@ func (q *queue) Enqueue(u string, interval time.Duration) error {
 		for i := 0; i < ll; i++ {
 			if i == ll-1 || list[i].fireAt.After(fireAt) {
 				// insert here
-				list = append(append(list[:i], &rqentry{fireAt: fireAt, url: u}), list[i:]...)
+				list = append(list[:i+1], list[i:]...)
+				list[i] = &rqentry{fireAt: fireAt, url: u}
 				break
 			}
 		}

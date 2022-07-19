@@ -32,6 +32,7 @@ linters:
     - govet
     - interfacer # deprecated
     - ifshort
+    - ireturn # No, I _LIKE_ returning interfaces
     - lll
     - maligned # deprecated
     - makezero
@@ -43,6 +44,7 @@ linters:
     - tagliatelle
     - testpackage
     - thelper
+    - varnamelen # short names are ok
     - wrapcheck
     - wsl
 
