@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// ErrSink is an abstraction that allows users to consume errors
-// produced while the cache queue is running.
+// HTTPClient defines the interface required for the HTTP client
+// used within the fetcher.
 type HTTPClient interface {
 	Get(string) (*http.Response, error)
 }
