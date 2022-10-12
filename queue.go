@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -50,7 +50,7 @@ func (f TransformFunc) Transform(u string, res *http.Response) (interface{}, err
 type BodyBytes struct{}
 
 func (BodyBytes) Transform(_ string, res *http.Response) (interface{}, error) {
-	buf, err := ioutil.ReadAll(res.Body)
+	buf, err := io.ReadAll(res.Body)
 	defer res.Body.Close()
 	if err != nil {
 		return nil, fmt.Errorf(`failed to read response body: %w`, err)
