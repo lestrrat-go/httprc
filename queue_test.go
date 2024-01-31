@@ -13,18 +13,12 @@ import (
 
 // Sanity check for the queue portion
 
-type dummyFetcher struct {
+type dummyClient struct {
 	srv *httptest.Server
 }
 
-func (f *dummyFetcher) Fetch(_ context.Context, _ string, _ ...FetchOption) (*http.Response, error) {
-	panic("unimplemented")
-}
-
-// URLs must be for f.srv
-func (f *dummyFetcher) fetch(_ context.Context, fr *fetchRequest) (*http.Response, error) {
-	//nolint:noctx
-	return f.srv.Client().Get(fr.url)
+func (c *dummyClient) Do(req *http.Request) (*http.Response, error) {
+	return c.srv.Client().Do(req)
 }
 
 type noErrorSink struct {
@@ -44,7 +38,8 @@ func TestQueue(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	q := newQueue(ctx, 15*time.Minute, &dummyFetcher{srv: srv}, &noErrorSink{t: t})
+	f := newFetcher(ctx, WithHTTPClient(&dummyClient{srv: srv}))
+	q := newQueue(ctx, 15*time.Minute, f, &noErrorSink{t: t})
 
 	base := time.Now()
 	q.clock = clockFunc(func() time.Time {

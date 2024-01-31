@@ -125,7 +125,7 @@ type queue struct {
 	mu         sync.RWMutex
 	registry   map[string]*entry
 	windowSize time.Duration
-	fetch      Fetcher
+	fetch      *fetcher
 	fetchCond  *sync.Cond
 	fetchQueue []*rqentry
 
@@ -146,7 +146,7 @@ func (cf clockFunc) Now() time.Time {
 	return cf()
 }
 
-func newQueue(ctx context.Context, window time.Duration, fetch Fetcher, errSink ErrSink) *queue {
+func newQueue(ctx context.Context, window time.Duration, fetch *fetcher, errSink ErrSink) *queue {
 	fetchLocker := &sync.Mutex{}
 	rq := &queue{
 		windowSize: window,

@@ -7,6 +7,12 @@ import (
 	"sync"
 )
 
+// HTTPClient defines the interface required for the HTTP client
+// used within the fetcher.
+type HTTPClient interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
 type fetchRequest struct {
 	mu sync.RWMutex
 
@@ -14,7 +20,7 @@ type fetchRequest struct {
 	// request. By setting a custom *http.Client, you can for example
 	// provide a custom http.Transport
 	//
-	// If not specified, http.DefaultClient will be used.
+	// If not specified, whatever specified when Cache is created
 	client HTTPClient
 
 	wl Whitelist
@@ -48,12 +54,7 @@ type fetcher struct {
 	requests chan *fetchRequest
 }
 
-type Fetcher interface {
-	Fetch(context.Context, string, ...FetchOption) (*http.Response, error)
-	fetch(context.Context, *fetchRequest) (*http.Response, error)
-}
-
-func NewFetcher(ctx context.Context, options ...FetcherOption) Fetcher {
+func newFetcher(ctx context.Context, options ...FetcherOption) *fetcher {
 	var nworkers int
 	var wl Whitelist
 	for _, option := range options {
@@ -80,7 +81,7 @@ func NewFetcher(ctx context.Context, options ...FetcherOption) Fetcher {
 }
 
 func (f *fetcher) Fetch(ctx context.Context, u string, options ...FetchOption) (*http.Response, error) {
-	var client HTTPClient
+	var client HTTPClient = http.DefaultClient
 	var wl Whitelist
 	for _, option := range options {
 		//nolint:forcetypeassert
@@ -139,9 +140,6 @@ LOOP:
 			req.mu.RLock()
 			reply := req.reply
 			client := req.client
-			if client == nil {
-				client = http.DefaultClient
-			}
 			url := req.url
 			reqwl := req.wl
 			req.mu.RUnlock()
@@ -168,8 +166,19 @@ LOOP:
 			}
 
 			// The body is handled by the consumer of the fetcher
+			httpreq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				r := &fetchResult{
+					err: err,
+				}
+				if err := r.reply(ctx, reply); err != nil {
+					break LOOP
+				}
+				continue LOOP
+			}
+
 			//nolint:bodyclose
-			res, err := client.Get(url)
+			res, err := client.Do(httpreq)
 			r := &fetchResult{
 				res: res,
 				err: err,

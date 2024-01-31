@@ -3,16 +3,9 @@ package httprc
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 )
-
-// HTTPClient defines the interface required for the HTTP client
-// used within the fetcher.
-type HTTPClient interface {
-	Get(string) (*http.Response, error)
-}
 
 // Cache represents a cache that stores resources locally, while
 // periodically refreshing the contents based on HTTP header values
@@ -65,10 +58,12 @@ func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 		switch option.Ident() {
 		case identRefreshWindow{}:
 			refreshWindow = option.Value().(time.Duration)
-		case identFetcherWorkerCount{}, identWhitelist{}:
-			fetcherOptions = append(fetcherOptions, option)
 		case identErrSink{}:
 			errSink = option.Value().(ErrSink)
+		default:
+			if fo, ok := option.(FetcherOption); ok {
+				fetcherOptions = append(fetcherOptions, fo)
+			}
 		}
 	}
 
@@ -76,7 +71,7 @@ func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 		refreshWindow = defaultRefreshWindow
 	}
 
-	fetch := NewFetcher(ctx, fetcherOptions...)
+	fetch := newFetcher(ctx, fetcherOptions...)
 	queue := newQueue(ctx, refreshWindow, fetch, errSink)
 
 	return &Cache{

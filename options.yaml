@@ -5,13 +5,19 @@ interfaces:
     comment: |
       RegisterOption desribes options that can be passed to `(httprc.Cache).Register()`
   - name: CacheOption
+    methods:
+      - cacheOption
     comment: |
       CacheOption desribes options that can be passed to `New()`
   - name: FetcherOption
     methods:
-      - cacheOption
+      - fetcherOption
     comment: |
       FetcherOption describes options that can be passed to `(httprc.Fetcher).NewFetcher()`
+  - name: FetcherCacheOption
+    methods:
+      - cacheOption
+      - fetcherOption
   - name: FetchOption
     comment: |
       FetchOption describes options that can be passed to `(httprc.Fetcher).Fetch()`
@@ -51,7 +57,7 @@ options:
       to the fetched resource. The `Transform()` method is only called if the HTTP request
       returns a `200 OK` status.
   - ident: HTTPClient
-    interface: FetchRegisterOption
+    interface: FetchFetcherRegisterOption
     argument_type: HTTPClient
     comment: |
       WithHTTPClient specififes the HTTP Client object that should be used to fetch
