@@ -72,6 +72,7 @@ type queue struct {
 	fetch      *fetcher
 	fetchCond  *sync.Cond
 	fetchQueue []*rqentry
+	client     HTTPClient
 
 	// list is a sorted list of urls to their expected fire time
 	// when we get a new tick in the RQ loop, we process everything
@@ -90,7 +91,10 @@ func (cf clockFunc) Now() time.Time {
 	return cf()
 }
 
-func newQueue(ctx context.Context, registry *registry, window time.Duration, fetch *fetcher, errSink ErrSink) *queue {
+func newQueue(ctx context.Context, registry *registry, window time.Duration, fetch *fetcher, client HTTPClient, errSink ErrSink) *queue {
+	if client == nil {
+		client = http.DefaultClient
+	}
 	fetchLocker := &sync.Mutex{}
 	rq := &queue{
 		windowSize: window,
@@ -98,6 +102,7 @@ func newQueue(ctx context.Context, registry *registry, window time.Duration, fet
 		fetchCond:  sync.NewCond(fetchLocker),
 		registry:   registry,
 		clock:      clockFunc(time.Now),
+		client:     client,
 	}
 
 	go rq.refreshLoop(ctx, errSink)
@@ -107,7 +112,7 @@ func newQueue(ctx context.Context, registry *registry, window time.Duration, fet
 
 func (q *queue) Register(u string, options ...RegisterOption) error {
 	var refreshInterval time.Duration
-	var client HTTPClient
+	var client HTTPClient = q.client
 	var wl Whitelist
 	var transform Transformer = BodyBytes{}
 

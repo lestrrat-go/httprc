@@ -39,7 +39,7 @@ func TestQueue(t *testing.T) {
 	defer srv.Close()
 
 	f := newFetcher(ctx, 0, InsecureWhitelist{})
-	q := newQueue(ctx, newRegistry(), 15*time.Minute, f, &noErrorSink{t: t})
+	q := newQueue(ctx, newRegistry(), 15*time.Minute, f, &dummyClient{srv: srv}, &noErrorSink{t: t})
 
 	base := time.Now()
 	q.clock = clockFunc(func() time.Time {

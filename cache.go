@@ -3,6 +3,7 @@ package httprc
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -60,6 +61,7 @@ func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 	var errSink ErrSink
 	var wl Whitelist
 	var nworkers int
+	var client = http.DefaultClient
 	for _, option := range options {
 		//nolint:forcetypeassert
 		switch option.Ident() {
@@ -72,6 +74,7 @@ func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 		case identFetcherWorkerCount{}:
 			nworkers = option.Value().(int)
 		}
+		// TODO add HTTPClient option
 	}
 
 	if refreshWindow < time.Second {
@@ -81,7 +84,7 @@ func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 	registry := newRegistry()
 
 	fetch := newFetcher(ctx, nworkers, wl)
-	queue := newQueue(ctx, registry, refreshWindow, fetch, errSink)
+	queue := newQueue(ctx, registry, refreshWindow, fetch, client, errSink)
 
 	return &Cache{
 		queue: queue,
