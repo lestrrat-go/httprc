@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/httprc"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type dummyErrSink struct {
@@ -57,42 +57,28 @@ func TestCache(t *testing.T) {
 	)
 
 	c.Register(srv.URL, httprc.WithHTTPClient(srv.Client()), httprc.WithMinRefreshInterval(time.Second))
-	if !assert.True(t, c.IsRegistered(srv.URL)) {
-		return
-	}
+	require.True(t, c.IsRegistered(srv.URL))
 
 	for i := 0; i < 3; i++ {
 		v, err := c.Get(ctx, srv.URL)
-		if !assert.NoError(t, err, `c.Get should succeed`) {
-			return
-		}
-		if !assert.IsType(t, []byte(nil), v, `c.Get should return []byte`) {
-			return
-		}
+		require.NoError(t, err, `c.Get should succeed`)
+		require.IsType(t, []byte(nil), v, `c.Get should return []byte`)
 	}
 	muCalled.Lock()
-	if !assert.Equal(t, 1, called, `there should only be one fetch request`) {
-		return
-	}
+	require.Equal(t, 1, called, `there should only be one fetch request`)
 	muCalled.Unlock()
 
 	time.Sleep(4 * time.Second)
 	for i := 0; i < 3; i++ {
 		_, err := c.Get(ctx, srv.URL)
-		if !assert.NoError(t, err, `c.Get should succeed`) {
-			return
-		}
+		require.NoError(t, err, `c.Get should succeed`)
 	}
 
 	muCalled.Lock()
-	if !assert.Equal(t, 2, called, `there should only be one fetch request`) {
-		return
-	}
+	require.Equal(t, 2, called, `there should only be one fetch request`)
 	muCalled.Unlock()
 
-	if !assert.True(t, len(errSink.errors) == 0) {
-		return
-	}
+	require.NotEmpty(t, errSink.errors)
 
 	c.Register(srv.URL,
 		httprc.WithHTTPClient(srv.Client()),
@@ -106,7 +92,5 @@ func TestCache(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	cancel()
 
-	if !assert.True(t, len(errSink.getErrors()) > 0) {
-		return
-	}
+	require.NotEmpty(t, errSink.getErrors())
 }

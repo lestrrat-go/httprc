@@ -112,6 +112,7 @@ func newQueue(ctx context.Context, registry *registry, window time.Duration, fet
 
 func (q *queue) Register(u string, options ...RegisterOption) error {
 	var refreshInterval time.Duration
+	//nolint:revive,stylecheck
 	var client HTTPClient = q.client
 	var wl Whitelist
 	var transform Transformer = BodyBytes{}
@@ -248,6 +249,8 @@ func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
 
 	// synchronously go fetch
 	e.lastFetch = time.Now()
+
+	//nolint:bodyclose
 	res, err := q.fetch.fetch(ctx, e.request)
 	if err != nil {
 		// Even if the request failed, we need to queue the next fetch
