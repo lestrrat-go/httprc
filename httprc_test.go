@@ -78,7 +78,7 @@ func TestCache(t *testing.T) {
 	require.Equal(t, 2, called, `there should only be one fetch request`)
 	muCalled.Unlock()
 
-	require.NotEmpty(t, errSink.errors)
+	require.Empty(t, errSink.errors)
 
 	c.Register(srv.URL,
 		httprc.WithHTTPClient(srv.Client()),
