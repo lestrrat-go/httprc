@@ -38,8 +38,8 @@ func TestQueue(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := newFetcher(ctx, WithHTTPClient(&dummyClient{srv: srv}))
-	q := newQueue(ctx, 15*time.Minute, f, &noErrorSink{t: t})
+	f := newFetcher(ctx, 0, InsecureWhitelist{})
+	q := newQueue(ctx, newRegistry(), 15*time.Minute, f, &noErrorSink{t: t})
 
 	base := time.Now()
 	q.clock = clockFunc(func() time.Time {

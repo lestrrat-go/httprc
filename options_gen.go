@@ -22,23 +22,6 @@ type cacheOption struct {
 
 func (*cacheOption) cacheOption() {}
 
-type FetchFetcherRegisterOption interface {
-	Option
-	fetchOption()
-	fetcherOption()
-	registerOption()
-}
-
-type fetchFetcherRegisterOption struct {
-	Option
-}
-
-func (*fetchFetcherRegisterOption) fetchOption() {}
-
-func (*fetchFetcherRegisterOption) fetcherOption() {}
-
-func (*fetchFetcherRegisterOption) registerOption() {}
-
 // FetchOption describes options that can be passed to `(httprc.Fetcher).Fetch()`
 type FetchOption interface {
 	Option
@@ -64,18 +47,6 @@ type fetchRegisterOption struct {
 func (*fetchRegisterOption) fetchOption() {}
 
 func (*fetchRegisterOption) registerOption() {}
-
-// FetcherOption describes options that can be passed to `(httprc.Fetcher).NewFetcher()`
-type FetcherOption interface {
-	Option
-	fetcherOption()
-}
-
-type fetcherOption struct {
-	Option
-}
-
-func (*fetcherOption) fetcherOption() {}
 
 // RegisterOption desribes options that can be passed to `(httprc.Cache).Register()`
 type RegisterOption interface {
@@ -139,15 +110,15 @@ func WithErrSink(v ErrSink) CacheOption {
 
 // WithFetchWorkerCount specifies the number of HTTP fetch workers that are spawned
 // in the backend. By default 3 workers are spawned.
-func WithFetcherWorkerCount(v int) FetcherOption {
-	return &fetcherOption{option.New(identFetcherWorkerCount{}, v)}
+func WithFetcherWorkerCount(v int) CacheOption {
+	return &cacheOption{option.New(identFetcherWorkerCount{}, v)}
 }
 
 // WithHTTPClient specififes the HTTP Client object that should be used to fetch
 // the resource. For example, if you need an `*http.Client` instance that requires
 // special TLS or Authorization setup, you might want to pass it using this option.
-func WithHTTPClient(v HTTPClient) FetchFetcherRegisterOption {
-	return &fetchFetcherRegisterOption{option.New(identHTTPClient{}, v)}
+func WithHTTPClient(v HTTPClient) FetchRegisterOption {
+	return &fetchRegisterOption{option.New(identHTTPClient{}, v)}
 }
 
 // WithMinRefreshInterval specifies the minimum refresh interval to be used.
@@ -216,6 +187,6 @@ func WithTransformer(v Transformer) RegisterOption {
 // basis using `(httprc.Cache).Register()`. If both are specified,
 // the url must fulfill _both_ the cache-wide whitelist and the per-URL
 // whitelist.
-func WithWhitelist(v Whitelist) FetchFetcherRegisterOption {
-	return &fetchFetcherRegisterOption{option.New(identWhitelist{}, v)}
+func WithWhitelist(v Whitelist) FetchRegisterOption {
+	return &fetchRegisterOption{option.New(identWhitelist{}, v)}
 }

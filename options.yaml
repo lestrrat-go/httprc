@@ -9,15 +9,6 @@ interfaces:
       - cacheOption
     comment: |
       CacheOption desribes options that can be passed to `New()`
-  - name: FetcherOption
-    methods:
-      - fetcherOption
-    comment: |
-      FetcherOption describes options that can be passed to `(httprc.Fetcher).NewFetcher()`
-  - name: FetcherCacheOption
-    methods:
-      - cacheOption
-      - fetcherOption
   - name: FetchOption
     comment: |
       FetchOption describes options that can be passed to `(httprc.Fetcher).Fetch()`
@@ -25,20 +16,15 @@ interfaces:
     methods:
       - fetchOption
       - registerOption
-  - name: FetchFetcherRegisterOption
-    methods:
-      - fetchOption
-      - fetcherOption
-      - registerOption
 options:
   - ident: FetcherWorkerCount
-    interface: FetcherOption
+    interface: CacheOption
     argument_type: int
     comment: |
       WithFetchWorkerCount specifies the number of HTTP fetch workers that are spawned
       in the backend. By default 3 workers are spawned.
   - ident: Whitelist
-    interface: FetchFetcherRegisterOption
+    interface: FetchRegisterOption
     argument_type: Whitelist
     comment: |
       WithWhitelist specifies the Whitelist object that can control which URLs are
@@ -57,7 +43,7 @@ options:
       to the fetched resource. The `Transform()` method is only called if the HTTP request
       returns a `200 OK` status.
   - ident: HTTPClient
-    interface: FetchFetcherRegisterOption
+    interface: FetchRegisterOption
     argument_type: HTTPClient
     comment: |
       WithHTTPClient specififes the HTTP Client object that should be used to fetch

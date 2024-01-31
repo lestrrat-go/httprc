@@ -64,66 +64,10 @@ type rqentry struct {
 	url    string
 }
 
-// entry represents a resource to be fetched over HTTP,
-// long with optional specifications such as the *http.Client
-// object to use.
-type entry struct {
-	mu  sync.RWMutex
-	sem chan struct{}
-
-	lastFetch time.Time
-
-	// Interval between refreshes are calculated two ways.
-	// 1) You can set an explicit refresh interval by using WithRefreshInterval().
-	//    In this mode, it doesn't matter what the HTTP response says in its
-	//    Cache-Control or Expires headers
-	// 2) You can let us calculate the time-to-refresh based on the key's
-	//    Cache-Control or Expires headers.
-	//    First, the user provides us the absolute minimum interval before
-	//    refreshes. We will never check for refreshes before this specified
-	//    amount of time.
-	//
-	//    Next, max-age directive in the Cache-Control header is consulted.
-	//    If `max-age` is not present, we skip the following section, and
-	//    proceed to the next option.
-	//    If `max-age > user-supplied minimum interval`, then we use the max-age,
-	//    otherwise the user-supplied minimum interval is used.
-	//
-	//    Next, the value specified in Expires header is consulted.
-	//    If the header is not present, we skip the following seciont and
-	//    proceed to the next option.
-	//    We take the time until expiration `expires - time.Now()`, and
-	//    if `time-until-expiration > user-supplied minimum interval`, then
-	//    we use the expires value, otherwise the user-supplied minimum interval is used.
-	//
-	//    If all of the above fails, we used the user-supplied minimum interval
-	refreshInterval    time.Duration
-	minRefreshInterval time.Duration
-
-	request *fetchRequest
-
-	transform Transformer
-	data      interface{}
-}
-
-func (e *entry) acquireSem() {
-	e.sem <- struct{}{}
-}
-
-func (e *entry) releaseSem() {
-	<-e.sem
-}
-
-func (e *entry) hasBeenFetched() bool {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return !e.lastFetch.IsZero()
-}
-
 // queue is responsible for updating the contents of the storage
 type queue struct {
 	mu         sync.RWMutex
-	registry   map[string]*entry
+	registry   *registry
 	windowSize time.Duration
 	fetch      *fetcher
 	fetchCond  *sync.Cond
@@ -146,13 +90,13 @@ func (cf clockFunc) Now() time.Time {
 	return cf()
 }
 
-func newQueue(ctx context.Context, window time.Duration, fetch *fetcher, errSink ErrSink) *queue {
+func newQueue(ctx context.Context, registry *registry, window time.Duration, fetch *fetcher, errSink ErrSink) *queue {
 	fetchLocker := &sync.Mutex{}
 	rq := &queue{
 		windowSize: window,
 		fetch:      fetch,
 		fetchCond:  sync.NewCond(fetchLocker),
-		registry:   make(map[string]*entry),
+		registry:   registry,
 		clock:      clockFunc(time.Now),
 	}
 
@@ -192,45 +136,21 @@ func (q *queue) Register(u string, options ...RegisterOption) error {
 		return fmt.Errorf(`refresh interval (%s) is smaller than refresh window (%s): this will not as expected`, refreshInterval, rWindow)
 	}
 
-	e := entry{
-		sem:                make(chan struct{}, 1),
-		minRefreshInterval: minRefreshInterval,
-		transform:          transform,
-		refreshInterval:    refreshInterval,
-		request: &fetchRequest{
-			client: client,
-			url:    u,
-			wl:     wl,
-		},
-	}
-	q.mu.Lock()
-	q.registry[u] = &e
-	q.mu.Unlock()
+	e := newEntry(minRefreshInterval, refreshInterval, transform, newFetchRequest(u, client, wl))
+	q.registry.Register(u, e)
 	return nil
 }
 
 func (q *queue) Unregister(u string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	_, ok := q.registry[u]
-	if !ok {
-		return fmt.Errorf(`url %q has not been registered`, u)
-	}
-	delete(q.registry, u)
-	return nil
-}
-
-func (q *queue) getRegistered(u string) (*entry, bool) {
-	q.mu.RLock()
-	e, ok := q.registry[u]
-	q.mu.RUnlock()
-
-	return e, ok
+	return q.registry.Unregister(u)
 }
 
 func (q *queue) IsRegistered(u string) bool {
-	_, ok := q.getRegistered(u)
-	return ok
+	return q.registry.IsRegistered(u)
+}
+
+func (q *queue) getRegistered(u string) (*entry, bool) {
+	return q.registry.getRegistered(u)
 }
 
 func (q *queue) fetchLoop(ctx context.Context, errSink ErrSink) {
@@ -256,7 +176,7 @@ func (q *queue) fetchLoop(ctx context.Context, errSink ErrSink) {
 			default:
 			}
 
-			e, ok := q.getRegistered(rq.url)
+			e, ok := q.registry.getRegistered(rq.url)
 			if !ok {
 				continue
 			}
@@ -441,19 +361,5 @@ type Snapshot struct {
 
 // Snapshot returns the contents of the cache at the given moment.
 func (q *queue) snapshot() *Snapshot {
-	q.mu.RLock()
-	list := make([]SnapshotEntry, 0, len(q.registry))
-
-	for url, e := range q.registry {
-		list = append(list, SnapshotEntry{
-			URL:         url,
-			LastFetched: e.lastFetch,
-			Data:        e.data,
-		})
-	}
-	q.mu.RUnlock()
-
-	return &Snapshot{
-		Entries: list,
-	}
+	return q.registry.Snapshot()
 }

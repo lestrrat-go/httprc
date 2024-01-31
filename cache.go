@@ -48,11 +48,18 @@ const defaultRefreshWindow = 15 * time.Minute
 // Internally the HTTP fetching is done using a pool of HTTP fetch
 // workers. The default number of workers is 3. You may change this
 // number by specifying the `httprc.WithFetcherWorkerCount`
+//
+// If you need to change how the individual HTTP requests are performed
+// (e.g. you need authentication, you need special DNS resolution, etc)
+// provide your custom HTTP client via `httprc.WithHTTPClient`.
+// Specifying an HTTP client in the constructor specifies the _default_
+// client. It can further be specified on a per-URL basis by specifying
+// a client in `Register`
 func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 	var refreshWindow time.Duration
 	var errSink ErrSink
 	var wl Whitelist
-	var fetcherOptions []FetcherOption
+	var nworkers int
 	for _, option := range options {
 		//nolint:forcetypeassert
 		switch option.Ident() {
@@ -60,10 +67,10 @@ func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 			refreshWindow = option.Value().(time.Duration)
 		case identErrSink{}:
 			errSink = option.Value().(ErrSink)
-		default:
-			if fo, ok := option.(FetcherOption); ok {
-				fetcherOptions = append(fetcherOptions, fo)
-			}
+		case identWhitelist{}:
+			wl = option.Value().(Whitelist)
+		case identFetcherWorkerCount{}:
+			nworkers = option.Value().(int)
 		}
 	}
 
@@ -71,8 +78,10 @@ func NewCache(ctx context.Context, options ...CacheOption) *Cache {
 		refreshWindow = defaultRefreshWindow
 	}
 
-	fetch := newFetcher(ctx, fetcherOptions...)
-	queue := newQueue(ctx, refreshWindow, fetch, errSink)
+	registry := newRegistry()
+
+	fetch := newFetcher(ctx, nworkers, wl)
+	queue := newQueue(ctx, registry, refreshWindow, fetch, errSink)
 
 	return &Cache{
 		queue: queue,

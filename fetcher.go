@@ -7,6 +7,8 @@ import (
 	"sync"
 )
 
+const defaultWorkerCount = 3
+
 // HTTPClient defines the interface required for the HTTP client
 // used within the fetcher.
 type HTTPClient interface {
@@ -33,6 +35,14 @@ type fetchRequest struct {
 	reply chan *fetchResult
 }
 
+func newFetchRequest(url string, client HTTPClient, wl Whitelist) *fetchRequest {
+	return &fetchRequest{
+		url:    url,
+		client: client,
+		wl:     wl,
+	}
+}
+
 type fetchResult struct {
 	mu  sync.RWMutex
 	res *http.Response
@@ -54,21 +64,9 @@ type fetcher struct {
 	requests chan *fetchRequest
 }
 
-func newFetcher(ctx context.Context, options ...FetcherOption) *fetcher {
-	var nworkers int
-	var wl Whitelist
-	for _, option := range options {
-		//nolint:forcetypeassert
-		switch option.Ident() {
-		case identFetcherWorkerCount{}:
-			nworkers = option.Value().(int)
-		case identWhitelist{}:
-			wl = option.Value().(Whitelist)
-		}
-	}
-
+func newFetcher(ctx context.Context, nworkers int, wl Whitelist) *fetcher {
 	if nworkers < 1 {
-		nworkers = 3
+		nworkers = defaultWorkerCount
 	}
 
 	incoming := make(chan *fetchRequest)
@@ -78,28 +76,6 @@ func newFetcher(ctx context.Context, options ...FetcherOption) *fetcher {
 	return &fetcher{
 		requests: incoming,
 	}
-}
-
-func (f *fetcher) Fetch(ctx context.Context, u string, options ...FetchOption) (*http.Response, error) {
-	var client HTTPClient = http.DefaultClient
-	var wl Whitelist
-	for _, option := range options {
-		//nolint:forcetypeassert
-		switch option.Ident() {
-		case identHTTPClient{}:
-			client = option.Value().(HTTPClient)
-		case identWhitelist{}:
-			wl = option.Value().(Whitelist)
-		}
-	}
-
-	req := fetchRequest{
-		client: client,
-		url:    u,
-		wl:     wl,
-	}
-
-	return f.fetch(ctx, &req)
 }
 
 // fetch (unexported) is the main fetching implemntation.
