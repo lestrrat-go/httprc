@@ -1,4 +1,4 @@
-# github.com/lestrrat-go/httprc ![](https://github.com/lestrrat-go/httprc/workflows/CI/badge.svg) [![Go Reference](https://pkg.go.dev/badge/github.com/lestrrat-go/httprc.svg)](https://pkg.go.dev/github.com/lestrrat-go/httprc) [![codecov.io](https://codecov.io/github/lestrrat-go/httprc/coverage.svg)](https://codecov.io/github/lestrrat-go/httprc)
+# github.com/lestrrat-go/httprc/v2 ![](https://github.com/lestrrat-go/httprc/v2/workflows/CI/badge.svg) [![Go Reference](https://pkg.go.dev/badge/github.com/lestrrat-go/httprc/v2.svg)](https://pkg.go.dev/github.com/lestrrat-go/httprc/v2) [![codecov.io](https://codecov.io/github/lestrrat-go/httprc/coverage.svg)](https://codecov.io/github/lestrrat-go/httprc)
 
 `httprc` is a HTTP "Refresh" Cache. Its aim is to cache a remote resource that
 can be fetched via HTTP, but keep the cached content up-to-date based on periodic
@@ -18,7 +18,7 @@ import (
   "sync"
   "time"
 
-  "github.com/lestrrat-go/httprc"
+  "github.com/lestrrat-go/httprc/v2"
 )
 
 const (
