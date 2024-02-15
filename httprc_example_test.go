@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lestrrat-go/httprc"
+	"github.com/lestrrat-go/httprc/v2"
 )
 
 const (

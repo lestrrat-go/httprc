@@ -1,4 +1,4 @@
-module github.com/lestrrat-go/httprc
+module github.com/lestrrat-go/httprc/v2
 
 go 1.17
 
