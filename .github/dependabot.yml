@@ -9,7 +9,7 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "daily"
-    target-branch: "v2-api-change"
+    target-branch: "v2"
     labels:
       - "go"
       - "dependencies"
@@ -18,5 +18,5 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-    target-branch: "v2-api-change"
+    target-branch: "main"
 
