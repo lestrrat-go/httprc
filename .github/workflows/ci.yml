@@ -10,7 +10,7 @@ jobs:
     name: Go ${{ matrix.go }} test
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Check documentation generator
         run: |
           find . -name '*.md' | xargs env AUTODOC_DRYRUN=1 perl tools/autodoc.pl
