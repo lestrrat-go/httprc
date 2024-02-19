@@ -90,7 +90,7 @@ func ExampleCache() {
   // OUTPUT:
 }
 ```
-source: [httprc_example_test.go](https://github.com/lestrrat-go/jwx/blob/main/httprc_example_test.go)
+source: [httprc_example_test.go](https://github.com/lestrrat-go/jwx/blob/refs/heads/main/httprc_example_test.go)
 <!-- END INCLUDE -->
 
 # Sequence Diagram
