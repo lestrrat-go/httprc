@@ -1,10 +1,11 @@
 Changes
 =======
 
-v2.0.0 UNRELEASED
+v2.0.0 19 Feb 2024
 [Breaking Changes]
   * `Fetcher` type is no longer available. You probably want to provide
     a customg HTTP client instead via httprc.WithHTTPClient()).
+  * 
 
 v1.0.4 19 Jul 2022
   * Fix sloppy API breakage
