@@ -318,12 +318,12 @@ func (q *queue) refreshLoop(ctx context.Context, errSink ErrSink) {
 }
 
 func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
+	now := time.Now()
+	// synchronously go fetch
+	res, err := q.fetch.fetch(ctx, e.request)
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
-	// synchronously go fetch
-	e.lastFetch = time.Now()
-	res, err := q.fetch.fetch(ctx, e.request)
+	e.lastFetch = now
 	if err != nil {
 		// Even if the request failed, we need to queue the next fetch
 		q.enqueueNextFetch(nil, e)

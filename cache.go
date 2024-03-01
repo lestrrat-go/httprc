@@ -147,7 +147,6 @@ func (c *Cache) getOrFetch(ctx context.Context, u string, forceRefresh bool) (in
 	// has this entry been fetched? (but ignore and do a fetch
 	// if forceRefresh is true)
 	if forceRefresh || !e.hasBeenFetched() {
-
 		// Only one goroutine may enter this section.
 		// redundant checks allow cached gets avoid the semaphore,
 		// which allows them to return cached data immediately
