@@ -144,22 +144,19 @@ func (c *Cache) getOrFetch(ctx context.Context, u string, forceRefresh bool) (in
 	}
 	c.mu.RUnlock()
 
+	// Only one goroutine may enter this section.
+	e.acquireSem()
+
 	// has this entry been fetched? (but ignore and do a fetch
 	// if forceRefresh is true)
 	if forceRefresh || !e.hasBeenFetched() {
-		// Only one goroutine may enter this section.
-		// redundant checks allow cached gets avoid the semaphore,
-		// which allows them to return cached data immediately
-		// if the upstream server is slow or not responding
-		e.acquireSem()
-		if forceRefresh || !e.hasBeenFetched() {
-			if err := c.queue.fetchAndStore(ctx, e); err != nil {
-				e.releaseSem()
-				return nil, fmt.Errorf(`failed to fetch %q: %w`, u, err)
-			}
+		if err := c.queue.fetchAndStore(ctx, e); err != nil {
+			e.releaseSem()
+			return nil, fmt.Errorf(`failed to fetch %q: %w`, u, err)
 		}
-		e.releaseSem()
 	}
+
+	e.releaseSem()
 
 	e.mu.RLock()
 	data := e.data
