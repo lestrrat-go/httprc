@@ -1,6 +1,10 @@
 Changes
 =======
 
+v1.0.6 13 Jul 2024
+  * Apply #31 which reverts changes for v1.0.5. In some cases the changes
+    for v1.0.5 were causing panics due to writes against closed channels (#25).
+
 v1.0.5 07 Mar 2024
   * Avoid extra locks that forces cache.Get() to hang while cache.Refresh() is 
     being called against a slow/flaky server.
