@@ -146,8 +146,8 @@ func TestGH30(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	slowUrl := slowServer.URL
-	blockUrl := blockServer.URL
+	slowURL := slowServer.URL
+	blockURL := blockServer.URL
 
 	// Refresh quickly to make sure scheduled refresh and
 	// foreground refresh are queued while blockUrl is fetching
@@ -160,11 +160,11 @@ func TestGH30(t *testing.T) {
 		httprc.WithRefreshWindow(refreshWindow),
 		httprc.WithFetcherWorkerCount(workerCount))
 
-	require.NoError(t, cache.Register(blockUrl, httprc.WithRefreshInterval(time.Hour)), `register should succeed`)
-	require.NoError(t, cache.Register(slowUrl, httprc.WithRefreshInterval(refreshInterval)), `register should succeed`)
+	require.NoError(t, cache.Register(blockURL, httprc.WithRefreshInterval(time.Hour)), `register should succeed`)
+	require.NoError(t, cache.Register(slowURL, httprc.WithRefreshInterval(refreshInterval)), `register should succeed`)
 
 	// Step 1: Fetch slowUrl once to schedule refresh
-	_, err := cache.Get(ctx, slowUrl)
+	_, err := cache.Get(ctx, slowURL)
 	require.NoError(t, err, `get should succeed`)
 
 	// Step 2: Fetch blockUrl in a separate goroutine
@@ -172,7 +172,7 @@ func TestGH30(t *testing.T) {
 	running := make(chan struct{})
 	go func() {
 		close(running)
-		_, err := cache.Get(ctx, blockUrl)
+		_, err := cache.Get(ctx, blockURL)
 		require.NoError(t, err, `get (block url) should succeed`)
 	}()
 
@@ -183,7 +183,7 @@ func TestGH30(t *testing.T) {
 	// By the time the blockUrl fetch finishes, both this Refresh(...)
 	// and the scheduled refresh for slowUrl will be queued. The second
 	// of those will cause the panic.
-	_, err = cache.Refresh(ctx, slowUrl)
+	_, err = cache.Refresh(ctx, slowURL)
 	require.NoError(t, err, `get (slow url) should succeed`)
 
 	// Step 5: Wait for panic
