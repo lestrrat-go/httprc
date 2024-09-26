@@ -63,6 +63,8 @@ type ctrlRequest struct {
 	resource Resource
 }
 
+// AddResource adds a new resource to the controller. If the resource already
+// exists, it will return an error.
 func (c *Controller) AddResource(r Resource) error {
 	reply := make(chan error, 1)
 	c.incoming <- ctrlRequest{
@@ -73,6 +75,8 @@ func (c *Controller) AddResource(r Resource) error {
 	return <-reply
 }
 
+// RemoveResource removes a resource from the controller. If the resource does
+// not exist, it will return an error.
 func (c *Controller) RemoveResource(s Resource) {
 	reply := make(chan error, 1)
 	c.incoming <- ctrlRequest{

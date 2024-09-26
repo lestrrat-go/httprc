@@ -6,9 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/lestrrat-go/blackmagic"
 	"github.com/lestrrat-go/httpcc"
 )
 
@@ -18,15 +19,15 @@ const defaultMinInterval = 15 * time.Minute
 
 // ResourceBase is a generic Resource type
 type ResourceBase[T any] struct {
-	mu          sync.RWMutex
 	u           string
+	ready       chan struct{} // closed when the resource is ready (i.e. after first successful fetch)
 	httpcl      HTTPClient
 	t           Transformer[T]
-	r           T
-	next        time.Time
+	r           atomic.Value
+	next        atomic.Value
 	interval    time.Duration
-	minInterval time.Duration
-	busy        bool
+	minInterval atomic.Int64
+	busy        atomic.Bool
 }
 
 // NewResource creates a new Resource object which after fetching the
@@ -57,14 +58,16 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 	if _, err := url.Parse(s); err != nil {
 		return nil, fmt.Errorf(`httprc.NewResource: %w`, err)
 	}
-	return &ResourceBase[T]{
-		u:           s,
-		httpcl:      httpcl,
-		t:           transformer,
-		next:        time.Unix(0, 0), // initially, it should be fetched immediately
-		interval:    interval,
-		minInterval: minInterval,
-	}, nil
+	r := &ResourceBase[T]{
+		u:        s,
+		httpcl:   httpcl,
+		t:        transformer,
+		interval: interval,
+		ready:    make(chan struct{}),
+	}
+	r.minInterval.Store(int64(minInterval))
+	r.next.Store(time.Unix(0, 0)) // initially, it should be fetched immediately
+	return r, nil
 }
 
 // URL returns the URL of the resource.
@@ -72,18 +75,46 @@ func (r *ResourceBase[T]) URL() string {
 	return r.u
 }
 
+// Ready returns an empty error when the resource is ready. If the context
+// is canceled before the resource is ready, it will return the error from
+// the context.
+func (r *ResourceBase[T]) Ready(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-r.ready:
+		return nil
+	}
+}
+
+// Get assigns the value of the resource to the provided pointer.
+// If using the `httprc.ResourceBase[T]` type directly, you can use the `Resource()`
+// method to get the resource directly.
+//
+// This method exists because parametric types cannot be assigned to a single object type
+// that return different return values of the specialized type. i.e. for resources
+// `ResourceBase[A]` and `ResourceBase[B]`, we cannot have a single interface that can
+// be assigned to the same interface type `X` that expects a `Resource()` method that
+// returns `A` or `B` depending on the type of the resource. When accessing the
+// resource through the `httprc.Resource` interface, use this method to obtain the
+// stored value.
+func (r *ResourceBase[T]) Get(dst interface{}) error {
+	return blackmagic.AssignIfCompatible(dst, r.Resource())
+}
+
 // Resource returns the last fetched resource. If the resource has not been
 // fetched yet, this will return the zero value of type T.
+//
+// If you would rather wait until the resource is fetched, you can use the
+// `Ready()` method to wait until the resource is ready (i.e. fetched at least once).
 func (r *ResourceBase[T]) Resource() T {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.r
+	//nolint:forcetypeassert
+	return r.r.Load().(T)
 }
 
 func (r *ResourceBase[T]) Next() time.Time {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.next
+	//nolint:forcetypeassert
+	return r.next.Load().(time.Time)
 }
 
 func (r *ResourceBase[T]) ConstantInterval() time.Duration {
@@ -91,19 +122,15 @@ func (r *ResourceBase[T]) ConstantInterval() time.Duration {
 }
 
 func (r *ResourceBase[T]) MinimumInterval() time.Duration {
-	return r.minInterval
+	return time.Duration(r.minInterval.Load())
 }
 
 func (r *ResourceBase[T]) SetBusy(v bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.busy = v
+	r.busy.Store(v)
 }
 
 func (r *ResourceBase[T]) IsBusy() bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.busy
+	return r.busy.Load()
 }
 
 // limitedBody is a wrapper around an io.Reader that will only read up to
@@ -133,9 +160,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	}
 	defer res.Body.Close()
 
-	r.mu.Lock()
-	r.next = calculateNextRefreshTime(res, r.interval, r.minInterval)
-	r.mu.Unlock()
+	r.next.Store(calculateNextRefreshTime(res, r.interval, r.MinimumInterval()))
 
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf(`httprc.Resource.Sync: %w (status code=%d)`, errUnexpectedStatusCode, res.StatusCode)
@@ -151,9 +176,8 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf(`httprc.Resource.Sync: %w: %w`, errTransformerFailed, err)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.r = v
+	r.r.Store(v)
+	close(r.ready)
 	return nil
 }
 

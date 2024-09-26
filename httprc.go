@@ -28,6 +28,7 @@ func (f TransformFunc[T]) Transform(ctx context.Context, res *http.Response) (T,
 // Resource is a single resource that can be retrieved via HTTP, and (possibly) transformed
 // into an arbitrary object type. See ResourceBase for a generic implementation.
 type Resource interface {
+	Get(any) error
 	Next() time.Time
 	URL() string
 	Sync(context.Context) error
@@ -35,4 +36,5 @@ type Resource interface {
 	MinimumInterval() time.Duration
 	IsBusy() bool
 	SetBusy(bool)
+	Ready(context.Context) error
 }

@@ -3,6 +3,7 @@ module github.com/lestrrat-go/httprc/v3
 go 1.22.6
 
 require (
+	github.com/lestrrat-go/blackmagic v1.0.2
 	github.com/lestrrat-go/httpcc v1.0.1
 	github.com/lestrrat-go/option v1.0.1
 	github.com/stretchr/testify v1.9.0
