@@ -14,8 +14,9 @@ import (
 
 const ReadBufferSize = 1024 * 1024 * 10  // 10MB
 const MaxBufferSize = 1024 * 1024 * 1000 // 1GB
+const defaultMinInterval = 15 * time.Minute
 
-// ResourceBase is a generic Resouce type
+// ResourceBase is a generic Resource type
 type ResourceBase[T any] struct {
 	mu          sync.RWMutex
 	u           string
@@ -37,7 +38,7 @@ type ResourceBase[T any] struct {
 func NewResource[T any](s string, transformer Transformer[T], options ...NewResourceOption) (*ResourceBase[T], error) {
 	var httpcl HTTPClient = http.DefaultClient
 	var interval time.Duration
-	minInterval := 15 * time.Minute
+	minInterval := defaultMinInterval
 	//nolint:forcetypeassert
 	for _, option := range options {
 		switch option.Ident() {
@@ -50,7 +51,7 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 		}
 	}
 	if transformer == nil {
-		return nil, fmt.Errorf(`httprc.NewResource: transformer is required`)
+		return nil, fmt.Errorf(`httprc.NewResource: %w`, errTransformerRequired)
 	}
 
 	if _, err := url.Parse(s); err != nil {
@@ -122,7 +123,7 @@ func (l *limitedBody) Close() error {
 }
 
 func (r *ResourceBase[T]) Sync(ctx context.Context) error {
-	req, err := http.NewRequest(http.MethodGet, r.u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.u, nil)
 	if err != nil {
 		return fmt.Errorf(`httprc.Resource.Sync: failed to create request: %w`, err)
 	}
@@ -137,7 +138,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	r.mu.Unlock()
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf(`httprc.Resource.Sync: unexpected HTTP status code: %d`, res.StatusCode)
+		return fmt.Errorf(`httprc.Resource.Sync: %w (status code=%d)`, errUnexpectedStatusCode, res.StatusCode)
 	}
 
 	// replace the body of the response with a limited reader that
@@ -148,7 +149,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	}
 	v, err := r.transform(ctx, res)
 	if err != nil {
-		return fmt.Errorf(`httprc.Resource.Sync: failed to transform response body: %w`, err)
+		return fmt.Errorf(`httprc.Resource.Sync: %w: %w`, errTransformerFailed, err)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -161,7 +162,7 @@ func (r *ResourceBase[T]) transform(ctx context.Context, res *http.Response) (re
 	// if the Transform method panics, we can recover from it and return an error
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			gerr = fmt.Errorf(`httprc.Resource.transform: recovered from panic: %v`, recovered)
+			gerr = fmt.Errorf(`httprc.Resource.transform: %w: %v`, errRecoveredFromPanic, recovered)
 		}
 	}()
 	return r.t.Transform(ctx, res)

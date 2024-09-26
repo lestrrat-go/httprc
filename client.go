@@ -2,6 +2,7 @@ package httprc
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 )
@@ -14,6 +15,7 @@ type Client struct {
 }
 
 const DefaultWorkers = 5
+const oneDay = 24 * time.Hour
 
 func NewClient(options ...NewClientOption) *Client {
 	numWorkers := DefaultWorkers
@@ -72,7 +74,13 @@ func (c *Controller) AddResource(r Resource) error {
 }
 
 func (c *Controller) RemoveResource(s Resource) {
-
+	reply := make(chan error, 1)
+	c.incoming <- ctrlRequest{
+		op:       rmResource,
+		reply:    reply,
+		resource: s,
+	}
+	<-reply
 }
 
 func (c *Controller) handleRequest(req ctrlRequest) {
@@ -99,10 +107,33 @@ func (c *Controller) handleRequest(req ctrlRequest) {
 		}
 
 		c.check.Reset(time.Nanosecond)
+	case rmResource:
+		r := req.resource
+		minInterval := oneDay
+		loc := -1
+		for i, item := range c.items {
+			if d := item.MinimumInterval(); d < minInterval {
+				minInterval = d
+			}
+
+			if item.URL() == r.URL() {
+				loc = i
+			}
+		}
+
+		if loc < 0 {
+			req.reply <- errResourceNotFound
+			return
+		}
+
+		c.items = slices.Delete(c.items, loc, loc+1)
+		req.reply <- nil
+
+		c.check.Reset(minInterval)
 	}
 }
 
-func (c *Controller) loop(ctx context.Context) error {
+func (c *Controller) loop(ctx context.Context) {
 	for {
 		select {
 		case req := <-c.incoming:
@@ -119,7 +150,7 @@ func (c *Controller) loop(ctx context.Context) error {
 				c.outgoing <- item
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		}
 	}
 }
@@ -146,7 +177,7 @@ func (c *Client) Run(octx context.Context) (*Controller, error) {
 		go worker(ctx, outgoing)
 	}
 
-	tickDuration := 24 * time.Hour
+	tickDuration := oneDay
 	ctrl := &Controller{
 		cancel:       cancel,
 		outgoing:     outgoing,

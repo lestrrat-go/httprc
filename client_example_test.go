@@ -19,7 +19,7 @@ func ExampleClient() {
 		Hello string `json:"hello"`
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"hello": "world"})
 	}))
 

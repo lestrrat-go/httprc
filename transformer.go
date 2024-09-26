@@ -15,7 +15,7 @@ func BytesTransformer() Transformer[[]byte] {
 	return bytesTransformer{}
 }
 
-func (bytesTransformer) Transform(ctx context.Context, res *http.Response) ([]byte, error) {
+func (bytesTransformer) Transform(_ context.Context, res *http.Response) ([]byte, error) {
 	return io.ReadAll(res.Body)
 }
 
@@ -25,7 +25,7 @@ func JSONTransformer[T any]() Transformer[T] {
 	return jsonTransformer[T]{}
 }
 
-func (jsonTransformer[T]) Transform(ctx context.Context, res *http.Response) (T, error) {
+func (jsonTransformer[T]) Transform(_ context.Context, res *http.Response) (T, error) {
 	var v T
 	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
 		var zero T
