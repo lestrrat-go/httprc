@@ -1,6 +1,10 @@
 Changes
 =======
 
+v3.0.0 UNRELEASED
+[Breaking Changes]
+  * The entire API has been re-imagined for Go versions that allow typed parameters
+
 v2.0.0 19 Feb 2024
 [Breaking Changes]
   * `Fetcher` type is no longer available. You probably want to provide

@@ -6,23 +6,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ '1.21', '1.20' ]
+        go: [ '1.23', '1.22' ]
     name: Go ${{ matrix.go }} test
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - name: Check documentation generator
         run: |
           find . -name '*.md' | xargs env AUTODOC_DRYRUN=1 perl tools/autodoc.pl
       - name: Install Go stable version
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
           go-version: ${{ matrix.go }}
       - name: Test
-        run: go test -v -race -coverprofile=coverage.out -coverpkg=./... ./...
-      - name: Upload code coverage to codecov
-        if: matrix.go == '1.19'
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.out
+        run: go test -v -race 
 

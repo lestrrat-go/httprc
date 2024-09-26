@@ -36,7 +36,7 @@ for my $filename (@files) {
         $content =~ s{^(\t+)}{"  " x length($1)}gsme;
         $output->print($content);
         $output->print("```\n");
-        $output->print("source: [$include_filename](https://github.com/lestrrat-go/jwx/blob/$ENV{GITHUB_REF}/$include_filename)\n");
+        $output->print("source: [$include_filename](https://github.com/lestrrat-go/httprc/blob/$ENV{GITHUB_REF}/$include_filename)\n");
     
         # now we need to skip copying until the end of INCLUDE
         $skip_until_end = 1;

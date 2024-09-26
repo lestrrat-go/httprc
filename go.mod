@@ -1,6 +1,6 @@
-module github.com/lestrrat-go/httprc/v2
+module github.com/lestrrat-go/httprc/v3
 
-go 1.17
+go 1.22.6
 
 require (
 	github.com/lestrrat-go/httpcc v1.0.1

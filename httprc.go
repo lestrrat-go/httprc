@@ -1,22 +1,38 @@
-//go:generate tools/genoptions.sh
-
-// Package httprc implements a cache for resources available
-// over http(s). Its aim is not only to cache these resources so
-// that it saves on HTTP roundtrips, but it also periodically
-// attempts to auto-refresh these resources once they are cached
-// based on the user-specified intervals and HTTP `Expires` and
-// `Cache-Control` headers, thus keeping the entries _relatively_ fresh.
 package httprc
 
-import "fmt"
+import (
+	"context"
+	"net/http"
+	"time"
+)
 
-// RefreshError is the underlying error type that is sent to
-// the `httprc.ErrSink` objects
-type RefreshError struct {
-	URL string
-	Err error
+// HTTPClient is an interface that abstracts a "net/http".Client, so that
+// users can provide their own implementation of the HTTP client, if need be.
+type HTTPClient interface {
+	Do(*http.Request) (*http.Response, error)
 }
 
-func (re *RefreshError) Error() string {
-	return fmt.Sprintf(`refresh error (%q): %s`, re.URL, re.Err)
+// Transformer is used to convert the body of an HTTP response into an appropriate
+// object of type T.
+type Transformer[T any] interface {
+	Transform(context.Context, *http.Response) (T, error)
+}
+
+// TransformFunc is a function type that implements the Transformer interface.
+type TransformFunc[T any] func(context.Context, *http.Response) (T, error)
+
+func (f TransformFunc[T]) Transform(ctx context.Context, res *http.Response) (T, error) {
+	return f(ctx, res)
+}
+
+// Resource is a single resource that can be retrieved via HTTP, and (possibly) transformed
+// into an arbitrary object type. See ResourceBase for a generic implementation.
+type Resource interface {
+	Next() time.Time
+	URL() string
+	Sync(context.Context) error
+	ConstantInterval() time.Duration
+	MinimumInterval() time.Duration
+	IsBusy() bool
+	SetBusy(bool)
 }
