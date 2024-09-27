@@ -205,7 +205,9 @@ func (c *controller) handleRequest(ctx context.Context, req any) {
 		if interval < time.Second {
 			interval = time.Second
 		}
-		if c.tickInterval > interval {
+		if c.tickInterval < interval {
+			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: no adjusting required (time to next check %s > current tick interval %s)", interval, c.tickInterval))
+		} else {
 			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: adjusting tick interval to %s", interval))
 			c.tickInterval = interval
 			c.check.Reset(interval)

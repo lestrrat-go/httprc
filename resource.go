@@ -279,16 +279,20 @@ func calculateNextRefreshTime(ctx context.Context, traceSink TraceSink, res *htt
 		if v := res.Header.Get(`Expires`); v != "" {
 			expires, err := http.ParseTime(v)
 			if err == nil {
+				traceSink.Put(ctx, fmt.Sprintf("mage-age header set (%s)", expires))
 				resDuration := time.Until(expires)
-				if resDuration > minInterval {
+				if resDuration >= minInterval {
+					traceSink.Put(ctx, fmt.Sprintf("expires >= minimum interval, using minimum interval %s instead", minInterval))
 					return now.Add(resDuration)
 				}
+				traceSink.Put(ctx, "expires < minimum interval, using expires")
 				return now.Add(minInterval)
 			}
 			// fallthrough
 		}
 	}
 
+	traceSink.Put(ctx, "No cache-control/expiers headers found, using minimum interval")
 	// Previous fallthroughs are a little redandunt, but hey, it's all good.
 	return now.Add(minInterval)
 }
