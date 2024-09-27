@@ -23,12 +23,17 @@ type Client struct {
 const DefaultWorkers = 5
 const oneDay = 24 * time.Hour
 
+// NewClient creates a new `httprc.Client` object.
+//
+// By default ALL urls are allowed. This may not be suitable for you if
+// are using this in a production environment. You are encouraged to specify
+// a whitelist using the `WithWhitelist` option.
 func NewClient(options ...NewClientOption) *Client {
 	//nolint:stylecheck
 	var errSink ErrorSink = errsink.NewNop()
 	//nolint:stylecheck
 	var traceSink TraceSink = tracesink.NewNop()
-	var wl Whitelist = BlockAllWhitelist{}
+	var wl Whitelist = InsecureWhitelist{}
 
 	numWorkers := DefaultWorkers
 	//nolint:forcetypeassert

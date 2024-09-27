@@ -41,7 +41,7 @@ func TestClient(t *testing.T) {
 	defer cancel()
 
 	options := []httprc.NewClientOption{
-		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
+		//		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
 	}
 	cl := httprc.NewClient(options...)
 	ctrl, err := cl.Start(ctx)

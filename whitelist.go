@@ -9,9 +9,14 @@ import (
 // or not. Implementations of this interface can be used to restrict the URLs that
 // the client can access.
 //
+// By default all URLs are allowed, but this may not be ideal in production environments
+// for security reasons.
+//
 // This exists because you might use this module to store resources provided by
 // user of your application, in which case you cannot necessarily trust that the
 // URLs are safe.
+//
+// You will HAVE to provide some sort of whitelist.
 type Whitelist interface {
 	IsAllowed(string) bool
 }
@@ -21,8 +26,7 @@ type WhitelistFunc func(string) bool
 
 func (f WhitelistFunc) IsAllowed(u string) bool { return f(u) }
 
-// BlockAllWhitelist is a Whitelist implementation that blocks all URLs. This is the
-// default whitelist implementation.
+// BlockAllWhitelist is a Whitelist implementation that blocks all URLs.
 type BlockAllWhitelist struct{}
 
 // NewBlockAllWhitelist creates a new BlockAllWhitelist instance. It is safe to

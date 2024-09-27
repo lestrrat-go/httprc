@@ -21,6 +21,8 @@ func (bytesTransformer) Transform(_ context.Context, res *http.Response) ([]byte
 
 type jsonTransformer[T any] struct{}
 
+// JSONTransformer returns a Transformer that decodes the response body as JSON
+// into the provided type T.
 func JSONTransformer[T any]() Transformer[T] {
 	return jsonTransformer[T]{}
 }
