@@ -40,7 +40,7 @@ type ResourceBase[T any] struct {
 // This function will return an error if the URL is not a valid URL
 // (i.e. it cannot be parsed by url.Parse), or if the transformer is nil.
 func NewResource[T any](s string, transformer Transformer[T], options ...NewResourceOption) (*ResourceBase[T], error) {
-	var httpcl HTTPClient = http.DefaultClient
+	var httpcl HTTPClient
 	var interval time.Duration
 	minInterval := defaultMinInterval
 	//nolint:forcetypeassert
@@ -67,6 +67,9 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 		t:        transformer,
 		interval: interval,
 		ready:    make(chan struct{}),
+	}
+	if httpcl != nil {
+		r.httpcl = httpcl
 	}
 	r.minInterval.Store(int64(minInterval))
 	r.SetNext(time.Unix(0, 0)) // initially, it should be fetched immediately
@@ -111,8 +114,14 @@ func (r *ResourceBase[T]) Get(dst interface{}) error {
 // If you would rather wait until the resource is fetched, you can use the
 // `Ready()` method to wait until the resource is ready (i.e. fetched at least once).
 func (r *ResourceBase[T]) Resource() T {
-	//nolint:forcetypeassert
-	return r.r.Load().(T)
+	v := r.r.Load()
+	switch v := v.(type) {
+	case T:
+		return v
+	default:
+		var zero T
+		return zero
+	}
 }
 
 func (r *ResourceBase[T]) Next() time.Time {
@@ -170,8 +179,26 @@ func traceSinkFromContext(ctx context.Context) TraceSink {
 	return tracesink.Nop{}
 }
 
+type httpClientKey struct{}
+
+func withHTTPClient(ctx context.Context, cl HTTPClient) context.Context {
+	return context.WithValue(ctx, httpClientKey{}, cl)
+}
+
+func httpClientFromContext(ctx context.Context) HTTPClient {
+	if v := ctx.Value(httpClientKey{}); v != nil {
+		//nolint:forcetypeassert
+		return v.(HTTPClient)
+	}
+	return http.DefaultClient
+}
+
 func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	traceSink := traceSinkFromContext(ctx)
+	httpcl := r.httpcl
+	if httpcl == nil {
+		httpcl = httpClientFromContext(ctx)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.u, nil)
 	if err != nil {
@@ -179,13 +206,13 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	}
 
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: fetching %q", r.u))
-	res, err := r.httpcl.Do(req)
+	res, err := httpcl.Do(req)
 	if err != nil {
 		return fmt.Errorf(`httprc.Resource.Sync: failed to execute HTTP request: %w`, err)
 	}
 	defer res.Body.Close()
 
-	next := calculateNextRefreshTime(res, r.interval, r.MinimumInterval())
+	next := calculateNextRefreshTime(ctx, traceSink, res, r.interval, r.MinimumInterval())
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: next refresh time for %q is %v", r.u, next))
 	r.SetNext(next)
 
@@ -206,7 +233,9 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	}
 
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: storing new value for %q", r.u))
+	traceSink.Put(ctx, fmt.Sprintf("before store: %#v", r.r.Load()))
 	r.r.Store(v)
+	traceSink.Put(ctx, fmt.Sprintf("after store: %#v", r.r.Load()))
 	r.once.Do(func() { close(r.ready) })
 	return nil
 }
@@ -222,9 +251,10 @@ func (r *ResourceBase[T]) transform(ctx context.Context, res *http.Response) (re
 	return r.t.Transform(ctx, res)
 }
 
-func calculateNextRefreshTime(res *http.Response, interval, minInterval time.Duration) time.Time {
+func calculateNextRefreshTime(ctx context.Context, traceSink TraceSink, res *http.Response, interval, minInterval time.Duration) time.Time {
 	now := time.Now()
 	if interval > 0 {
+		traceSink.Put(ctx, fmt.Sprintf("Explicit interval set, using value %s", interval))
 		return now.Add(interval)
 	}
 
@@ -234,11 +264,14 @@ func calculateNextRefreshTime(res *http.Response, interval, minInterval time.Dur
 			if err == nil {
 				maxAge, ok := dir.MaxAge()
 				if ok {
+					traceSink.Put(ctx, fmt.Sprintf("max-age header set (%d)", maxAge))
 					resDuration := time.Duration(maxAge) * time.Second
-					if resDuration > minInterval {
-						return now.Add(resDuration)
+					if resDuration >= minInterval {
+						traceSink.Put(ctx, fmt.Sprintf("max-age >= minimum interval, using minimum interval %s instead", minInterval))
+						return now.Add(minInterval)
 					}
-					return now.Add(minInterval)
+					traceSink.Put(ctx, "max-age < minimum interval, using max-age")
+					return now.Add(resDuration)
 				}
 				// fallthrough
 			}

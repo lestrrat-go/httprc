@@ -60,12 +60,27 @@ type newResourceOption struct {
 
 func (newResourceOption) newResourceOption() {}
 
+type NewClientResourceOption interface {
+	option.Interface
+	newResourceOption()
+	newClientOption()
+}
+
+type newClientResourceOption struct {
+	option.Interface
+}
+
+func (newClientResourceOption) newResourceOption() {}
+func (newClientResourceOption) newClientOption()   {}
+
 type identHTTPClient struct{}
 
 // WithHTTPClient specifies the HTTP client to use for the client.
 // If not specified, the client will use http.DefaultClient.
-func WithHTTPClient(cl HTTPClient) NewResourceOption {
-	return newResourceOption{option.New(identHTTPClient{}, cl)}
+//
+// This option can be passed to NewClient or NewResource.
+func WithHTTPClient(cl HTTPClient) NewClientResourceOption {
+	return newClientResourceOption{option.New(identHTTPClient{}, cl)}
 }
 
 type identMinimumInterval struct{}

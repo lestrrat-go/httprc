@@ -40,7 +40,7 @@ type controller struct {
 
 	syncoutgoing chan synchronousRequest
 	items        map[string]Resource
-	tickDuration time.Duration
+	tickInterval time.Duration
 	shutdown     chan struct{}
 
 	wl Whitelist
@@ -86,6 +86,9 @@ type addRequest ctrlRequest[error]
 type rmRequest ctrlRequest[error]
 type refreshRequest ctrlRequest[error]
 type lookupRequest ctrlRequest[lookupReply]
+type adjustIntervalRequest struct {
+	resource Resource
+}
 
 // Lookup returns a resource by its URL. If the resource does not exist, it
 // will return an error.
@@ -190,6 +193,17 @@ func (c *controller) Refresh(ctx context.Context, u string) error {
 
 func (c *controller) handleRequest(ctx context.Context, req any) {
 	switch req := req.(type) {
+	case adjustIntervalRequest:
+		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: got adjust request (time until next check: %s)", time.Until(req.resource.Next())))
+		interval := time.Until(req.resource.Next())
+		if interval < time.Second {
+			interval = time.Second
+		}
+		if c.tickInterval > interval {
+			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: adjusting tick interval to %s", interval))
+			c.tickInterval = interval
+			c.check.Reset(interval)
+		}
 	case addRequest:
 		r := req.resource
 		if _, ok := c.items[r.URL()]; ok {
@@ -202,9 +216,9 @@ func (c *controller) handleRequest(ctx context.Context, req any) {
 
 		// force the next check to happen immediately
 		if d := r.ConstantInterval(); d > 0 {
-			c.tickDuration = d
+			c.tickInterval = d
 		} else if d := r.MinimumInterval(); d > 0 {
-			c.tickDuration = d
+			c.tickInterval = d
 		}
 
 		c.check.Reset(time.Nanosecond)
@@ -286,14 +300,20 @@ func (c *controller) loop(ctx context.Context, wg *sync.WaitGroup) {
 		case t := <-c.check.C:
 			// Always reset the ticker because the previous tick
 			// could have arrived by way of a forced tick
-			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: checking resources. Next check in %s", time.Now().Add(c.tickDuration)))
-			c.check.Reset(c.tickDuration)
+			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: checking resources. Next check in %s", time.Now().Add(c.tickInterval)))
+
+			minInterval := c.tickInterval
 			for _, item := range c.items {
+				if minInterval > item.MinimumInterval() {
+					minInterval = item.MinimumInterval()
+				}
 				if item.IsBusy() || item.Next().After(t) {
 					continue
 				}
 				sendWorker(ctx, c.outgoing, item)
 			}
+			c.tickInterval = minInterval
+			c.check.Reset(c.tickInterval)
 		case <-ctx.Done():
 			return
 		}

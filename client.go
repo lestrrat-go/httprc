@@ -2,6 +2,7 @@ package httprc
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 // Client is the main entry point for the httprc package.
 type Client struct {
 	mu         sync.Mutex
+	httpcl     HTTPClient
 	numWorkers int
 	running    bool
 	errSink    ErrorSink
@@ -34,11 +36,14 @@ func NewClient(options ...NewClientOption) *Client {
 	//nolint:stylecheck
 	var traceSink TraceSink = tracesink.NewNop()
 	var wl Whitelist = InsecureWhitelist{}
+	var httpcl HTTPClient = http.DefaultClient
 
 	numWorkers := DefaultWorkers
 	//nolint:forcetypeassert
 	for _, option := range options {
 		switch option.Ident() {
+		case identHTTPClient{}:
+			httpcl = option.Value().(HTTPClient)
 		case identWorkers{}:
 			numWorkers = option.Value().(int)
 		case identErrorSink{}:
@@ -54,6 +59,7 @@ func NewClient(options ...NewClientOption) *Client {
 		numWorkers = 1
 	}
 	return &Client{
+		httpcl:     httpcl,
 		numWorkers: numWorkers,
 		errSink:    errSink,
 		traceSink:  traceSink,
@@ -115,10 +121,18 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 	syncoutgoing := make(chan synchronousRequest, c.numWorkers)
 	wg.Add(c.numWorkers)
 	for range c.numWorkers {
-		go worker(ctx, &wg, outgoing, syncoutgoing, errSink, traceSink)
+		wrk := worker{
+			incoming:  incoming,
+			next:      outgoing,
+			nextsync:  syncoutgoing,
+			errSink:   errSink,
+			traceSink: traceSink,
+			httpcl:    c.httpcl,
+		}
+		go wrk.Run(ctx, &wg)
 	}
 
-	tickDuration := oneDay
+	tickInterval := oneDay
 	ctrl := &controller{
 		cancel:       cancel,
 		items:        make(map[string]Resource),
@@ -126,8 +140,8 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 		syncoutgoing: syncoutgoing,
 		incoming:     incoming,
 		traceSink:    traceSink,
-		tickDuration: tickDuration,
-		check:        time.NewTicker(tickDuration),
+		tickInterval: tickInterval,
+		check:        time.NewTicker(tickInterval),
 		shutdown:     make(chan struct{}),
 		wl:           c.wl,
 	}

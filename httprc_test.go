@@ -19,11 +19,23 @@ func TestClient(t *testing.T) {
 	type Hello struct {
 		Hello string `json:"hello"`
 	}
+
+	start := time.Now()
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "max-age=1")
+		var version string
+		if time.Since(start) > 2*time.Second {
+			version = "2"
+		}
 		switch r.URL.Path {
 		case "/json/helloptr", "/json/hello", "/json/hellomap":
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"hello":"world"}`))
+			switch version {
+			case "2":
+				w.Write([]byte(`{"hello":"world2"}`))
+			default:
+				w.Write([]byte(`{"hello":"world"}`))
+			}
 		case "/int":
 			w.Header().Set("Content-Type", "text/plain")
 			w.Write([]byte(`42`))
@@ -41,7 +53,7 @@ func TestClient(t *testing.T) {
 	defer cancel()
 
 	options := []httprc.NewClientOption{
-		//		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
+		//		httprc.WithTraceSink(tracesink.NewSlog(slog.New(slog.NewJSONHandler(os.Stdout, nil)))),
 	}
 	cl := httprc.NewClient(options...)
 	ctrl, err := cl.Start(ctx)
@@ -49,30 +61,34 @@ func TestClient(t *testing.T) {
 	defer ctrl.Shutdown(time.Second)
 
 	testcases := []struct {
-		URL      string
-		Create   func() (httprc.Resource, error)
-		Expected any
+		URL       string
+		Create    func() (httprc.Resource, error)
+		Expected  any
+		Expected2 any
 	}{
 		{
 			URL: srv.URL + "/json/helloptr",
 			Create: func() (httprc.Resource, error) {
 				return httprc.NewResource[*Hello](srv.URL+"/json/helloptr", httprc.JSONTransformer[*Hello]())
 			},
-			Expected: &Hello{Hello: "world"},
+			Expected:  &Hello{Hello: "world"},
+			Expected2: &Hello{Hello: "world2"},
 		},
 		{
 			URL: srv.URL + "/json/hello",
 			Create: func() (httprc.Resource, error) {
 				return httprc.NewResource[Hello](srv.URL+"/json/hello", httprc.JSONTransformer[Hello]())
 			},
-			Expected: Hello{Hello: "world"},
+			Expected:  Hello{Hello: "world"},
+			Expected2: Hello{Hello: "world2"},
 		},
 		{
 			URL: srv.URL + "/json/hellomap",
 			Create: func() (httprc.Resource, error) {
 				return httprc.NewResource[map[string]interface{}](srv.URL+"/json/hellomap", httprc.JSONTransformer[map[string]interface{}]())
 			},
-			Expected: map[string]interface{}{"hello": "world"},
+			Expected:  map[string]interface{}{"hello": "world"},
+			Expected2: map[string]interface{}{"hello": "world2"},
 		},
 		{
 			URL: srv.URL + "/int",
@@ -117,11 +133,21 @@ func TestClient(t *testing.T) {
 		})
 	}
 
+	time.Sleep(5 * time.Second)
 	for _, tc := range testcases {
 		t.Run("Lookup "+tc.URL, func(t *testing.T) {
 			r, err := ctrl.Lookup(ctx, tc.URL)
 			require.NoError(t, err, `ctrl.Lookup should succeed`)
 			require.Equal(t, tc.URL, r.URL(), `r.URL should return expected value`)
+
+			var dst interface{}
+			require.NoError(t, r.Get(&dst), `r.Get should succeed`)
+
+			expected := tc.Expected2
+			if expected == nil {
+				expected = tc.Expected
+			}
+			require.Equal(t, dst, expected, `r.Resource should return expected value`)
 		})
 	}
 }

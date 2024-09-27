@@ -31,7 +31,7 @@ type BlockAllWhitelist struct{}
 
 // NewBlockAllWhitelist creates a new BlockAllWhitelist instance. It is safe to
 // use the zero value of this type; this constructor is provided for consistency.
-func NewBlockAllWhitelist() Whitelist { return BlockAllWhitelist{} }
+func NewBlockAllWhitelist() BlockAllWhitelist { return BlockAllWhitelist{} }
 
 func (BlockAllWhitelist) IsAllowed(_ string) bool { return false }
 
@@ -42,7 +42,7 @@ type InsecureWhitelist struct{}
 
 // NewInsecureWhitelist creates a new InsecureWhitelist instance. It is safe to
 // use the zero value of this type; this constructor is provided for consistency.
-func NewInsecureWhitelist() Whitelist { return InsecureWhitelist{} }
+func NewInsecureWhitelist() InsecureWhitelist { return InsecureWhitelist{} }
 
 func (InsecureWhitelist) IsAllowed(_ string) bool { return true }
 
