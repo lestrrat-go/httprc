@@ -34,7 +34,7 @@ func ExampleClient() {
   }))
 
   options := []httprc.NewClientOption{
-    httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
+    //		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
   }
   // If you would like to handle errors from asynchronous workers, you can specify a error sink.
   // This is disabled in this example because the trace logs are dynamic
@@ -69,7 +69,7 @@ func ExampleClient() {
   }
 
   // Add the resource to the controller, so that it starts fetching
-  ctrl.AddResource(r)
+  ctrl.Add(ctx, r)
 
   {
     tctx, tcancel := context.WithTimeout(ctx, time.Second)
