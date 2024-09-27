@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -116,7 +117,10 @@ func TestClient(t *testing.T) {
 
 func TestRefresh(t *testing.T) {
 	count := 0
+	var mu sync.Mutex
 	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
 		count++
 		json.NewEncoder(w).Encode(map[string]interface{}{"count": count})
 	})
