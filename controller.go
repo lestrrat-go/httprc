@@ -2,6 +2,7 @@ package httprc
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ type controller struct {
 	incoming chan ctrlRequest
 	// outgoing sends Syncer objects to the worker pool
 	outgoing chan Resource
+
+	traceSink TraceSink
 
 	syncoutgoing chan synchronousRequest
 	items        []Resource
@@ -169,7 +172,7 @@ func (c *controller) handleRequest(ctx context.Context, req ctrlRequest) {
 }
 
 func sendWorker(ctx context.Context, ch chan Resource, r Resource) {
-	r.SetBusy(false)
+	r.SetBusy(true)
 	select {
 	case <-ctx.Done():
 	case ch <- r:
@@ -177,6 +180,7 @@ func sendWorker(ctx context.Context, ch chan Resource, r Resource) {
 }
 
 func sendWorkerSynchronous(ctx context.Context, ch chan synchronousRequest, r synchronousRequest) {
+	r.r.SetBusy(true)
 	select {
 	case <-ctx.Done():
 	case ch <- r:
@@ -204,6 +208,7 @@ func (c *controller) loop(ctx context.Context, wg *sync.WaitGroup) {
 		case t := <-c.check.C:
 			// Always reset the ticker because the previous tick
 			// could have arrived by way of a forced tick
+			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: checking resources. Next check in %s", time.Now().Add(c.tickDuration)))
 			c.check.Reset(c.tickDuration)
 			for _, item := range c.items {
 				if item.IsBusy() || item.Next().After(t) {

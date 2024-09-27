@@ -113,6 +113,7 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 		outgoing:     outgoing,
 		syncoutgoing: syncoutgoing,
 		incoming:     incoming,
+		traceSink:    traceSink,
 		tickDuration: tickDuration,
 		check:        time.NewTicker(tickDuration),
 		shutdown:     make(chan struct{}),
