@@ -9,10 +9,22 @@ import (
 )
 
 type Controller interface {
-	AddResource(Resource) error
-	Lookup(string) (Resource, error)
-	RemoveResource(string) error
-	Refresh(string) error
+	// Add adds a new `http.Resource` to the controller. If the resource already exists,
+	// it will return an error.
+	Add(context.Context, Resource) error
+
+	// Lookup a `httprc.Resource` by its URL. If the resource does not exist, it
+	// will return an error.
+	Lookup(context.Context, string) (Resource, error)
+
+	// Remove a `httprc.Resource` from the controller by its URL. If the resource does
+	// not exist, it will return an error.
+	Remove(context.Context, string) error
+
+	// Refresh forces a resource to be refreshed immediately. If the resource does
+	// not exist, or if the refresh fails, it will return an error.
+	Refresh(context.Context, string) error
+
 	ShutdownContext(context.Context) error
 	Shutdown(time.Duration) error
 }
@@ -84,54 +96,97 @@ type lookupRequest ctrlRequest[lookupReply]
 // you will either need to use the `Resource.Get()` method or use a type
 // assertion to obtain a `ResourceBase[T]` to get to the actual object you are
 // looking for
-func (c *controller) Lookup(u string) (Resource, error) {
-	// to avoid having to acquire locks, we do this asynchronously
+func (c *controller) Lookup(ctx context.Context, u string) (Resource, error) {
 	reply := make(chan lookupReply, 1)
-	c.incoming <- lookupRequest{
+	req := lookupRequest{
 		reply: reply,
 		u:     u,
 	}
-	r := <-reply
-	return r.r, r.err
+	select {
+	case c.incoming <- req:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-reply:
+		return r.r, r.err
+	}
 }
 
-// AddResource adds a new resource to the controller. If the resource already
+// Add adds a new resource to the controller. If the resource already
 // exists, it will return an error.
-func (c *controller) AddResource(r Resource) error {
+func (c *controller) Add(ctx context.Context, r Resource) error {
 	if !c.wl.IsAllowed(r.URL()) {
 		return fmt.Errorf(`httprc.Controller.AddResource: cannot add %q: %w`, r.URL(), errBlockedByWhitelist)
 	}
 
 	reply := make(chan error, 1)
-	c.incoming <- addRequest{
+	req := addRequest{
 		reply:    reply,
 		resource: r,
 	}
-	return <-reply
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.incoming <- req:
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-reply:
+		return err
+	}
 }
 
-// RemoveResource removes a resource from the controller. If the resource does
+// Remove removes a resource from the controller. If the resource does
 // not exist, it will return an error.
-func (c *controller) RemoveResource(u string) error {
+func (c *controller) Remove(ctx context.Context, u string) error {
 	reply := make(chan error, 1)
-	c.incoming <- rmRequest{
+	req := rmRequest{
 		reply: reply,
 		u:     u,
 	}
-	return <-reply
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.incoming <- req:
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-reply:
+		return err
+	}
 }
 
 // Refresh forces a resource to be refreshed immediately. If the resource does
 // not exist, or if the refresh fails, it will return an error.
 //
 // This function is synchronous, and will block until the resource has been refreshed.
-func (c *controller) Refresh(u string) error {
+func (c *controller) Refresh(ctx context.Context, u string) error {
 	reply := make(chan error, 1)
-	c.incoming <- refreshRequest{
+	req := refreshRequest{
 		reply: reply,
 		u:     u,
 	}
-	return <-reply
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.incoming <- req:
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-reply:
+		return err
+	}
 }
 
 func (c *controller) handleRequest(ctx context.Context, req any) {

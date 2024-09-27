@@ -59,7 +59,7 @@ func ExampleClient() {
 	}
 
 	// Add the resource to the controller, so that it starts fetching
-	ctrl.AddResource(r)
+	ctrl.Add(ctx, r)
 
 	{
 		tctx, tcancel := context.WithTimeout(ctx, time.Second)

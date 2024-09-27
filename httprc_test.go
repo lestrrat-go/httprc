@@ -107,7 +107,7 @@ func TestClient(t *testing.T) {
 			r, err := tc.Create()
 			require.NoError(t, err, `NewResource should succeed`)
 
-			require.NoError(t, ctrl.AddResource(r), `ctrl.AddResource should succeed`)
+			require.NoError(t, ctrl.Add(ctx, r), `ctrl.Add should succeed`)
 			require.NoError(t, r.Ready(ctx), `r.Ready should succeed`)
 
 			var dst interface{}
@@ -119,7 +119,7 @@ func TestClient(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run("Lookup "+tc.URL, func(t *testing.T) {
-			r, err := ctrl.Lookup(tc.URL)
+			r, err := ctrl.Lookup(ctx, tc.URL)
 			require.NoError(t, err, `ctrl.Lookup should succeed`)
 			require.Equal(t, tc.URL, r.URL(), `r.URL should return expected value`)
 		})
@@ -152,13 +152,13 @@ func TestRefresh(t *testing.T) {
 	r, err := httprc.NewResource[map[string]int](srv.URL, httprc.JSONTransformer[map[string]int]())
 	require.NoError(t, err, `NewResource should succeed`)
 
-	require.NoError(t, ctrl.AddResource(r), `ctrl.AddResource should succeed`)
+	require.NoError(t, ctrl.Add(ctx, r), `ctrl.Add should succeed`)
 
 	require.NoError(t, r.Ready(ctx), `r.Ready should succeed`)
 
 	for i := 1; i <= 5; i++ {
 		m := r.Resource()
 		require.Equal(t, i, m["count"], `r.Resource should return expected value`)
-		require.NoError(t, ctrl.Refresh(srv.URL), `r.Refresh should succeed`)
+		require.NoError(t, ctrl.Refresh(ctx, srv.URL), `r.Refresh should succeed`)
 	}
 }
