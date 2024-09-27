@@ -4,7 +4,15 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"github.com/lestrrat-go/httprc/v3/errsink"
+	"github.com/lestrrat-go/httprc/v3/tracesink"
 )
+
+// ErrorSink is an interface that abstracts a sink for errors.
+type ErrorSink = errsink.Interface
+
+type TraceSink = tracesink.Interface
 
 // HTTPClient is an interface that abstracts a "net/http".Client, so that
 // users can provide their own implementation of the HTTP client, if need be.
@@ -26,7 +34,13 @@ func (f TransformFunc[T]) Transform(ctx context.Context, res *http.Response) (T,
 }
 
 // Resource is a single resource that can be retrieved via HTTP, and (possibly) transformed
-// into an arbitrary object type. See ResourceBase for a generic implementation.
+// into an arbitrary object type.
+//
+// Realistically, there is no need for third-parties to implement this interface. This exists
+// to provide a way to aggregate `httprc.ResourceBase` objects with different specialized types
+// into a single collection.
+//
+// See ResourceBase for details
 type Resource interface {
 	Get(any) error
 	Next() time.Time

@@ -25,6 +25,22 @@ func WithWorkers(n int) NewClientOption {
 	return newClientOption{option.New(identWorkers{}, n)}
 }
 
+type identErrorSink struct{}
+
+// WithErrorSink specifies the error sink to use for the client.
+// If not specified, the client will use a NopErrorSink.
+func WithErrorSink(sink ErrorSink) NewClientOption {
+	return newClientOption{option.New(identErrorSink{}, sink)}
+}
+
+type identTraceSink struct{}
+
+// WithTraceSink specifies the trace sink to use for the client.
+// If not specified, the client will use a NopTraceSink.
+func WithTraceSink(sink TraceSink) NewClientOption {
+	return newClientOption{option.New(identTraceSink{}, sink)}
+}
+
 type NewResourceOption interface {
 	option.Interface
 	newResourceOption()

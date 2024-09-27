@@ -5,6 +5,10 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/lestrrat-go/httprc/v3/errsink"
+	"github.com/lestrrat-go/httprc/v3/proxysink"
+	"github.com/lestrrat-go/httprc/v3/tracesink"
 )
 
 // Client is the main entry point for the httprc package.
@@ -12,18 +16,28 @@ type Client struct {
 	mu         sync.Mutex
 	numWorkers int
 	running    bool
+	errSink    ErrorSink
+	traceSink  TraceSink
 }
 
 const DefaultWorkers = 5
 const oneDay = 24 * time.Hour
 
 func NewClient(options ...NewClientOption) *Client {
+	//nolint:stylecheck
+	var errSink ErrorSink = errsink.NewNop()
+	//nolint:stylecheck
+	var traceSink TraceSink = tracesink.NewNop()
 	numWorkers := DefaultWorkers
 	//nolint:forcetypeassert
 	for _, option := range options {
 		switch option.Ident() {
 		case identWorkers{}:
 			numWorkers = option.Value().(int)
+		case identErrorSink{}:
+			errSink = option.Value().(ErrorSink)
+		case identTraceSink{}:
+			traceSink = option.Value().(TraceSink)
 		}
 	}
 
@@ -32,6 +46,8 @@ func NewClient(options ...NewClientOption) *Client {
 	}
 	return &Client{
 		numWorkers: numWorkers,
+		errSink:    errSink,
+		traceSink:  traceSink,
 	}
 }
 
@@ -46,10 +62,25 @@ type Controller struct {
 	outgoing     chan Resource
 	items        []Resource
 	tickDuration time.Duration
+	shutdown     chan struct{}
 }
 
-func (c *Controller) Stop() {
+// Shutdown stops the client and all associated goroutines, and waits for them
+// to finish. If the context is canceled, the function will return immediately:
+// there fore you should not use the context you used to start the client (because
+// presumably it's already canceled).
+//
+// Waiting for the client shutdown will also ensure that all sinks are properly
+// flushed.
+func (c *Controller) Shutdown(ctx context.Context) error {
 	c.cancel()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.shutdown:
+		return nil
+	}
 }
 
 const (
@@ -137,7 +168,8 @@ func (c *Controller) handleRequest(req ctrlRequest) {
 	}
 }
 
-func (c *Controller) loop(ctx context.Context) {
+func (c *Controller) loop(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
 	for {
 		select {
 		case req := <-c.incoming:
@@ -159,12 +191,12 @@ func (c *Controller) loop(ctx context.Context) {
 	}
 }
 
-// Run sets the client into motion. It will start a number of worker goroutines,
+// Start sets the client into motion. It will start a number of worker goroutines,
 // and return a Controller object that you can use to control the execution of
 // the client.
 //
-// If you attempt to call Run more than once, it will return an error.
-func (c *Client) Run(octx context.Context) (*Controller, error) {
+// If you attempt to call Start more than once, it will return an error.
+func (c *Client) Start(octx context.Context) (*Controller, error) {
 	c.mu.Lock()
 	if c.running {
 		c.mu.Unlock()
@@ -173,12 +205,46 @@ func (c *Client) Run(octx context.Context) (*Controller, error) {
 	c.running = true
 	c.mu.Unlock()
 
+	// DON'T CANCEL THIS IN THIS METHOD! It's the responsibility of the
+	// controller to cancel this context.
 	ctx, cancel := context.WithCancel(octx)
+
+	var wg sync.WaitGroup
+
+	// start proxy goroutines that will accept sink requests
+	// and forward them to the appropriate sink
+	var errSink ErrorSink
+	if _, ok := c.errSink.(errsink.Nop); ok {
+		errSink = c.errSink
+	} else {
+		proxy := proxysink.New[error](c.errSink)
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, proxy *proxysink.Proxy[error]) {
+			defer wg.Done()
+			proxy.Run(ctx)
+		}(&wg, proxy)
+
+		errSink = proxy
+	}
+
+	var traceSink TraceSink
+	if _, ok := c.traceSink.(tracesink.Nop); ok {
+		traceSink = c.traceSink
+	} else {
+		proxy := proxysink.New[string](c.traceSink)
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, proxy *proxysink.Proxy[string]) {
+			defer wg.Done()
+			proxy.Run(ctx)
+		}(&wg, proxy)
+		traceSink = proxy
+	}
 
 	incoming := make(chan ctrlRequest, c.numWorkers)
 	outgoing := make(chan Resource, c.numWorkers)
+	wg.Add(c.numWorkers)
 	for range c.numWorkers {
-		go worker(ctx, outgoing)
+		go worker(ctx, &wg, outgoing, errSink, traceSink)
 	}
 
 	tickDuration := oneDay
@@ -188,8 +254,15 @@ func (c *Client) Run(octx context.Context) (*Controller, error) {
 		incoming:     incoming,
 		tickDuration: tickDuration,
 		check:        time.NewTicker(tickDuration),
+		shutdown:     make(chan struct{}),
 	}
-	go ctrl.loop(ctx)
+	wg.Add(1)
+	go ctrl.loop(ctx, &wg)
+
+	go func(wg *sync.WaitGroup, ch chan struct{}) {
+		wg.Wait()
+		close(ch)
+	}(&wg, ctrl.shutdown)
 
 	return ctrl, nil
 }

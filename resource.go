@@ -11,6 +11,7 @@ import (
 
 	"github.com/lestrrat-go/blackmagic"
 	"github.com/lestrrat-go/httpcc"
+	"github.com/lestrrat-go/httprc/v3/tracesink"
 )
 
 const ReadBufferSize = 1024 * 1024 * 10  // 10MB
@@ -149,18 +150,38 @@ func (l *limitedBody) Close() error {
 	return l.close()
 }
 
+type traceSinkKey struct{}
+
+func withTraceSink(ctx context.Context, sink TraceSink) context.Context {
+	return context.WithValue(ctx, traceSinkKey{}, sink)
+}
+
+func traceSinkFromContext(ctx context.Context) TraceSink {
+	if v := ctx.Value(traceSinkKey{}); v != nil {
+		//nolint:forcetypeassert
+		return v.(TraceSink)
+	}
+	return tracesink.Nop{}
+}
+
 func (r *ResourceBase[T]) Sync(ctx context.Context) error {
+	traceSink := traceSinkFromContext(ctx)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.u, nil)
 	if err != nil {
 		return fmt.Errorf(`httprc.Resource.Sync: failed to create request: %w`, err)
 	}
+
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: fetching %q", r.u))
 	res, err := r.httpcl.Do(req)
 	if err != nil {
 		return fmt.Errorf(`httprc.Resource.Sync: failed to execute HTTP request: %w`, err)
 	}
 	defer res.Body.Close()
 
-	r.next.Store(calculateNextRefreshTime(res, r.interval, r.MinimumInterval()))
+	next := calculateNextRefreshTime(res, r.interval, r.MinimumInterval())
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: next refresh time for %q is %v", r.u, next))
+	r.next.Store(next)
 
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf(`httprc.Resource.Sync: %w (status code=%d)`, errUnexpectedStatusCode, res.StatusCode)
@@ -172,10 +193,13 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 		rdr:   &io.LimitedReader{R: res.Body, N: MaxBufferSize},
 		close: res.Body.Close,
 	}
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: transforming %q", r.u))
 	v, err := r.transform(ctx, res)
 	if err != nil {
 		return fmt.Errorf(`httprc.Resource.Sync: %w: %w`, errTransformerFailed, err)
 	}
+
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: storing new value for %q", r.u))
 	r.r.Store(v)
 	close(r.ready)
 	return nil
