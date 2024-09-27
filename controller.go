@@ -3,7 +3,6 @@ package httprc
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 )
@@ -40,7 +39,7 @@ type controller struct {
 	traceSink TraceSink
 
 	syncoutgoing chan synchronousRequest
-	items        []Resource
+	items        map[string]Resource
 	tickDuration time.Duration
 	shutdown     chan struct{}
 
@@ -193,15 +192,12 @@ func (c *controller) handleRequest(ctx context.Context, req any) {
 	switch req := req.(type) {
 	case addRequest:
 		r := req.resource
-		for _, item := range c.items {
-			if item.URL() == r.URL() {
-				// Already exists
-				sendReply(ctx, req.reply, errResourceAlreadyExists)
-				return
-			}
+		if _, ok := c.items[r.URL()]; ok {
+			// Already exists
+			sendReply(ctx, req.reply, errResourceAlreadyExists)
+			return
 		}
-
-		c.items = append(c.items, r)
+		c.items[r.URL()] = r
 		closeReply(req.reply)
 
 		// force the next check to happen immediately
@@ -214,49 +210,42 @@ func (c *controller) handleRequest(ctx context.Context, req any) {
 		c.check.Reset(time.Nanosecond)
 	case rmRequest:
 		u := req.u
-		minInterval := oneDay
-		loc := -1
-		for i, item := range c.items {
-			if d := item.MinimumInterval(); d < minInterval {
-				minInterval = d
-			}
-
-			if item.URL() == u {
-				loc = i
-			}
-		}
-
-		if loc < 0 {
+		if _, ok := c.items[u]; !ok {
 			sendReply(ctx, req.reply, errResourceNotFound)
 			return
 		}
 
-		c.items = slices.Delete(c.items, loc, loc+1)
+		delete(c.items, u)
+
+		minInterval := oneDay
+		for _, item := range c.items {
+			if d := item.MinimumInterval(); d < minInterval {
+				minInterval = d
+			}
+		}
+
 		closeReply[error](req.reply)
 		c.check.Reset(minInterval)
 	case refreshRequest:
 		u := req.u
-		for _, item := range c.items {
-			if item.URL() != u {
-				continue
-			}
-			item.SetNext(time.Unix(0, 0))
-			sendWorkerSynchronous(ctx, c.syncoutgoing, synchronousRequest{
-				r:     item,
-				reply: req.reply,
-			})
+		r, ok := c.items[u]
+		if !ok {
+			sendReply(ctx, req.reply, errResourceNotFound)
 			return
 		}
-		sendReply(ctx, req.reply, errResourceNotFound)
+		r.SetNext(time.Unix(0, 0))
+		sendWorkerSynchronous(ctx, c.syncoutgoing, synchronousRequest{
+			r:     r,
+			reply: req.reply,
+		})
 	case lookupRequest:
 		u := req.u
-		for _, item := range c.items {
-			if item.URL() == u {
-				sendReply(ctx, req.reply, lookupReply{r: item})
-				return
-			}
+		r, ok := c.items[u]
+		if !ok {
+			sendReply(ctx, req.reply, lookupReply{err: errResourceNotFound})
+			return
 		}
-		sendReply(ctx, req.reply, lookupReply{err: errResourceNotFound})
+		sendReply(ctx, req.reply, lookupReply{r: r})
 	}
 }
 

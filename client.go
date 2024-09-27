@@ -121,6 +121,7 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 	tickDuration := oneDay
 	ctrl := &controller{
 		cancel:       cancel,
+		items:        make(map[string]Resource),
 		outgoing:     outgoing,
 		syncoutgoing: syncoutgoing,
 		incoming:     incoming,
