@@ -43,3 +43,9 @@ var errRecoveredFromPanic = errors.New(`recovered from panic`)
 func ErrRecoveredFromPanic() error {
 	return errRecoveredFromPanic
 }
+
+var errBlockedByWhitelist = errors.New(`blocked by whitelist`)
+
+func ErrBlockedByWhitelist() error {
+	return errBlockedByWhitelist
+}

@@ -40,7 +40,10 @@ func TestClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cl := httprc.NewClient()
+	options := []httprc.NewClientOption{
+		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
+	}
+	cl := httprc.NewClient(options...)
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, `cl.Run should succeed`)
 	defer ctrl.Shutdown(time.Second)
@@ -130,7 +133,10 @@ func TestRefresh(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cl := httprc.NewClient()
+	options := []httprc.NewClientOption{
+		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
+	}
+	cl := httprc.NewClient(options...)
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, `cl.Run should succeed`)
 	defer ctrl.Shutdown(time.Second)

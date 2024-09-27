@@ -17,6 +17,7 @@ type Client struct {
 	running    bool
 	errSink    ErrorSink
 	traceSink  TraceSink
+	wl         Whitelist
 }
 
 const DefaultWorkers = 5
@@ -27,6 +28,9 @@ func NewClient(options ...NewClientOption) *Client {
 	var errSink ErrorSink = errsink.NewNop()
 	//nolint:stylecheck
 	var traceSink TraceSink = tracesink.NewNop()
+	//nolint:stylecheck
+	var wl Whitelist = BlockAllWhitelist{}
+
 	numWorkers := DefaultWorkers
 	//nolint:forcetypeassert
 	for _, option := range options {
@@ -37,6 +41,8 @@ func NewClient(options ...NewClientOption) *Client {
 			errSink = option.Value().(ErrorSink)
 		case identTraceSink{}:
 			traceSink = option.Value().(TraceSink)
+		case identWhitelist{}:
+			wl = option.Value().(Whitelist)
 		}
 	}
 
@@ -47,6 +53,7 @@ func NewClient(options ...NewClientOption) *Client {
 		numWorkers: numWorkers,
 		errSink:    errSink,
 		traceSink:  traceSink,
+		wl:         wl,
 	}
 }
 
@@ -117,6 +124,7 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 		tickDuration: tickDuration,
 		check:        time.NewTicker(tickDuration),
 		shutdown:     make(chan struct{}),
+		wl:           c.wl,
 	}
 	wg.Add(1)
 	go ctrl.loop(ctx, &wg)

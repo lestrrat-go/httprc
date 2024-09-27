@@ -41,6 +41,14 @@ func WithTraceSink(sink TraceSink) NewClientOption {
 	return newClientOption{option.New(identTraceSink{}, sink)}
 }
 
+type identWhitelist struct{}
+
+// WithWhitelist specifies the whitelist to use for the client.
+// If not specified, the client will use a BlockAllWhitelist.
+func WithWhitelist(wl Whitelist) NewClientOption {
+	return newClientOption{option.New(identWhitelist{}, wl)}
+}
+
 type NewResourceOption interface {
 	option.Interface
 	newResourceOption()

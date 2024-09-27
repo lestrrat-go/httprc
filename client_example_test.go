@@ -23,7 +23,9 @@ func ExampleClient() {
 		json.NewEncoder(w).Encode(map[string]string{"hello": "world"})
 	}))
 
-	var options []httprc.NewClientOption
+	options := []httprc.NewClientOption{
+		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
+	}
 	// If you would like to handle errors from asynchronous workers, you can specify a error sink.
 	// This is disabled in this example because the trace logs are dynamic
 	// and thus would interfere with the runnable example test.

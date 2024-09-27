@@ -33,7 +33,9 @@ func ExampleClient() {
     json.NewEncoder(w).Encode(map[string]string{"hello": "world"})
   }))
 
-  var options []httprc.NewClientOption
+  options := []httprc.NewClientOption{
+    httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
+  }
   // If you would like to handle errors from asynchronous workers, you can specify a error sink.
   // This is disabled in this example because the trace logs are dynamic
   // and thus would interfere with the runnable example test.
@@ -57,11 +59,7 @@ func ExampleClient() {
   // dangling goroutines hanging around when you exit. For example, if you
   // are running tests to check for goroutine leaks, you should call this
   // function before the end of your test.
-  defer func() {
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    _ = ctrl.Shutdown(ctx)
-  }()
+  defer ctrl.Shutdown(time.Second)
 
   // Create a new resource that is synchronized every so often
   r, err := httprc.NewResource[HelloWorld](srv.URL, httprc.JSONTransformer[HelloWorld]())
@@ -87,5 +85,5 @@ func ExampleClient() {
   // world
 }
 ```
-source: [client_example_test.go](https://github.com/lestrrat-go/httprc/blob/v3-wip/client_example_test.go)
+source: [client_example_test.go](https://github.com/lestrrat-go/httprc/blob/v3/client_example_test.go)
 <!-- END INCLUDE -->

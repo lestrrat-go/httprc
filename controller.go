@@ -30,6 +30,8 @@ type controller struct {
 	items        []Resource
 	tickDuration time.Duration
 	shutdown     chan struct{}
+
+	wl Whitelist
 }
 
 // Shutdown is a convenience function that calls ShutdownContext with a
@@ -74,6 +76,10 @@ type ctrlRequest struct {
 // AddResource adds a new resource to the controller. If the resource already
 // exists, it will return an error.
 func (c *controller) AddResource(r Resource) error {
+	if !c.wl.IsAllowed(r.URL()) {
+		return fmt.Errorf(`httprc.Controller.AddResource: cannot add %q: %w`, r.URL(), errBlockedByWhitelist)
+	}
+
 	reply := make(chan error, 1)
 	c.incoming <- ctrlRequest{
 		op:       addResource,
