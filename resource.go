@@ -233,9 +233,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	}
 
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: storing new value for %q", r.u))
-	traceSink.Put(ctx, fmt.Sprintf("before store: %#v", r.r.Load()))
 	r.r.Store(v)
-	traceSink.Put(ctx, fmt.Sprintf("after store: %#v", r.r.Load()))
 	r.once.Do(func() { close(r.ready) })
 	return nil
 }

@@ -196,6 +196,11 @@ func (c *controller) handleRequest(ctx context.Context, req any) {
 	case adjustIntervalRequest:
 		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: got adjust request (time until next check: %s)", time.Until(req.resource.Next())))
 		interval := time.Until(req.resource.Next())
+		diff := int64(interval) % int64(time.Second)
+		interval = time.Duration(int64(interval) - diff)
+		if diff > (int64(time.Second) / 2) {
+			interval += time.Second
+		}
 		if interval < time.Second {
 			interval = time.Second
 		}
