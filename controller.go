@@ -176,12 +176,10 @@ func sendWorker(ctx context.Context, ch chan Resource, r Resource) {
 	}
 }
 
-func sendWorkerSynchronous(ctx context.Context, ch chan synchronousRequest, r synchronousRequest) error {
+func sendWorkerSynchronous(ctx context.Context, ch chan synchronousRequest, r synchronousRequest) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
 	case ch <- r:
-		return <-r.reply
 	}
 }
 
