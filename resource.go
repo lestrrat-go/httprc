@@ -292,7 +292,7 @@ func calculateNextRefreshTime(ctx context.Context, traceSink TraceSink, res *htt
 		}
 	}
 
-	traceSink.Put(ctx, "No cache-control/expiers headers found, using minimum interval")
+	traceSink.Put(ctx, "No cache-control/expires headers found, using minimum interval")
 	// Previous fallthroughs are a little redandunt, but hey, it's all good.
 	return now.Add(minInterval)
 }
