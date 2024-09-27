@@ -28,7 +28,6 @@ func NewClient(options ...NewClientOption) *Client {
 	var errSink ErrorSink = errsink.NewNop()
 	//nolint:stylecheck
 	var traceSink TraceSink = tracesink.NewNop()
-	//nolint:stylecheck
 	var wl Whitelist = BlockAllWhitelist{}
 
 	numWorkers := DefaultWorkers
