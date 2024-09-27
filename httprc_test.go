@@ -2,6 +2,7 @@ package httprc_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,11 +42,7 @@ func TestClient(t *testing.T) {
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, `cl.Run should succeed`)
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = ctrl.Shutdown(ctx)
-	}()
+	defer ctrl.Shutdown(time.Second)
 
 	testcases := []struct {
 		URL      string
@@ -114,5 +111,36 @@ func TestClient(t *testing.T) {
 
 			require.Equal(t, tc.Expected, dst, `r.Get should return expected value`)
 		})
+	}
+}
+
+func TestRefresh(t *testing.T) {
+	count := 0
+	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		count++
+		json.NewEncoder(w).Encode(map[string]interface{}{"count": count})
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cl := httprc.NewClient()
+	ctrl, err := cl.Start(ctx)
+	require.NoError(t, err, `cl.Run should succeed`)
+	defer ctrl.Shutdown(time.Second)
+
+	r, err := httprc.NewResource[map[string]int](srv.URL, httprc.JSONTransformer[map[string]int]())
+	require.NoError(t, err, `NewResource should succeed`)
+
+	require.NoError(t, ctrl.AddResource(r), `ctrl.AddResource should succeed`)
+
+	require.NoError(t, r.Ready(ctx), `r.Ready should succeed`)
+
+	for i := 1; i <= 5; i++ {
+		m := r.Resource()
+		require.Equal(t, i, m["count"], `r.Resource should return expected value`)
+		require.NoError(t, ctrl.Refresh(srv.URL), `r.Refresh should succeed`)
 	}
 }

@@ -2,7 +2,6 @@ package proxysink
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -47,7 +46,6 @@ func (p *Proxy[T]) controlloop(ctx context.Context) {
 			p.mu.Lock()
 			p.pending = append(p.pending, r)
 			p.mu.Unlock()
-			fmt.Printf("controlloop got %#v\n", r)
 		}
 		p.cond.Broadcast()
 	}
@@ -61,7 +59,6 @@ func (p *Proxy[T]) flushloop(ctx context.Context) {
 		case <-ctx.Done():
 			p.mu.Lock()
 			if len(p.pending) <= 0 {
-				fmt.Println("flushloop done")
 				p.mu.Unlock()
 				return
 			}

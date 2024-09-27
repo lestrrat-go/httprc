@@ -47,11 +47,7 @@ func ExampleClient() {
 	// dangling goroutines hanging around when you exit. For example, if you
 	// are running tests to check for goroutine leaks, you should call this
 	// function before the end of your test.
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = ctrl.Shutdown(ctx)
-	}()
+	defer ctrl.Shutdown(time.Second)
 
 	// Create a new resource that is synchronized every so often
 	r, err := httprc.NewResource[HelloWorld](srv.URL, httprc.JSONTransformer[HelloWorld]())

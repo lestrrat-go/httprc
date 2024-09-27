@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,7 @@ const defaultMinInterval = 15 * time.Minute
 type ResourceBase[T any] struct {
 	u           string
 	ready       chan struct{} // closed when the resource is ready (i.e. after first successful fetch)
+	once        sync.Once
 	httpcl      HTTPClient
 	t           Transformer[T]
 	r           atomic.Value
@@ -67,7 +69,7 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 		ready:    make(chan struct{}),
 	}
 	r.minInterval.Store(int64(minInterval))
-	r.next.Store(time.Unix(0, 0)) // initially, it should be fetched immediately
+	r.SetNext(time.Unix(0, 0)) // initially, it should be fetched immediately
 	return r, nil
 }
 
@@ -116,6 +118,10 @@ func (r *ResourceBase[T]) Resource() T {
 func (r *ResourceBase[T]) Next() time.Time {
 	//nolint:forcetypeassert
 	return r.next.Load().(time.Time)
+}
+
+func (r *ResourceBase[T]) SetNext(v time.Time) {
+	r.next.Store(v)
 }
 
 func (r *ResourceBase[T]) ConstantInterval() time.Duration {
@@ -181,7 +187,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 
 	next := calculateNextRefreshTime(res, r.interval, r.MinimumInterval())
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: next refresh time for %q is %v", r.u, next))
-	r.next.Store(next)
+	r.SetNext(next)
 
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf(`httprc.Resource.Sync: %w (status code=%d)`, errUnexpectedStatusCode, res.StatusCode)
@@ -201,7 +207,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: storing new value for %q", r.u))
 	r.r.Store(v)
-	close(r.ready)
+	r.once.Do(func() { close(r.ready) })
 	return nil
 }
 

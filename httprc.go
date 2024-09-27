@@ -44,6 +44,7 @@ func (f TransformFunc[T]) Transform(ctx context.Context, res *http.Response) (T,
 type Resource interface {
 	Get(any) error
 	Next() time.Time
+	SetNext(time.Time)
 	URL() string
 	Sync(context.Context) error
 	ConstantInterval() time.Duration
