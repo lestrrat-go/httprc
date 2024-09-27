@@ -147,7 +147,7 @@ func TestClient(t *testing.T) {
 			if expected == nil {
 				expected = tc.Expected
 			}
-			require.Equal(t, dst, expected, `r.Resource should return expected value`)
+			require.Equal(t, expected, dst, `r.Resource should return expected value`)
 		})
 	}
 }

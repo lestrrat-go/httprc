@@ -198,6 +198,7 @@ func (c *controller) handleRequest(ctx context.Context, req any) {
 		interval := time.Until(req.resource.Next())
 		diff := int64(interval) % int64(time.Second)
 		interval = time.Duration(int64(interval) - diff)
+		//nolint:mnd // oh, come on, I can divide by _two_
 		if diff > (int64(time.Second) / 2) {
 			interval += time.Second
 		}
