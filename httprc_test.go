@@ -116,6 +116,14 @@ func TestClient(t *testing.T) {
 			require.Equal(t, tc.Expected, dst, `r.Get should return expected value`)
 		})
 	}
+
+	for _, tc := range testcases {
+		t.Run("Lookup "+tc.URL, func(t *testing.T) {
+			r, err := ctrl.Lookup(tc.URL)
+			require.NoError(t, err, `ctrl.Lookup should succeed`)
+			require.Equal(t, tc.URL, r.URL(), `r.URL should return expected value`)
+		})
+	}
 }
 
 func TestRefresh(t *testing.T) {

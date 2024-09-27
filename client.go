@@ -110,7 +110,7 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 		traceSink = proxy
 	}
 
-	incoming := make(chan ctrlRequest, c.numWorkers)
+	incoming := make(chan any, c.numWorkers)
 	outgoing := make(chan Resource, c.numWorkers)
 	syncoutgoing := make(chan synchronousRequest, c.numWorkers)
 	wg.Add(c.numWorkers)
