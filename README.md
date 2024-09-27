@@ -81,7 +81,6 @@ func ExampleClient() {
       return
     }
   }
-  time.Sleep(time.Second)
   m := r.Resource()
   fmt.Println(m.Hello)
   // OUTPUT:
