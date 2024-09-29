@@ -271,16 +271,16 @@ func (r *ResourceBase[T]) determineNextFetchInterval(ctx context.Context, name s
 	traceSink := traceSinkFromContext(ctx)
 
 	if fromHeader > max {
-		traceSink.Put(ctx, fmt.Sprintf("%s > maximum interval, using maximum interval %s", name, max))
+		traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s %s > maximum interval, using maximum interval %s", r.URL(), name, max))
 		return max
 	}
 
 	if fromHeader < min {
-		traceSink.Put(ctx, fmt.Sprintf("%s < minimum interval, using minimum interval %s", name, min))
+		traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s %s < minimum interval, using minimum interval %s", r.URL(), name, min))
 		return min
 	}
 
-	traceSink.Put(ctx, fmt.Sprintf("Using %s (%d)", name, fromHeader))
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Using %s (%s)", r.URL(), name, fromHeader))
 	return fromHeader
 }
 
@@ -292,7 +292,7 @@ func (r *ResourceBase[T]) calculateNextRefreshTime(ctx context.Context, res *htt
 	// If constant interval is set, use that regardless of what the
 	// response headers say.
 	if interval := r.ConstantInterval(); interval > 0 {
-		traceSink.Put(ctx, fmt.Sprintf("Explicit interval set, using value %s", interval))
+		traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Explicit interval set, using value %s", r.URL(), interval))
 		return now.Add(interval)
 	}
 
@@ -301,7 +301,7 @@ func (r *ResourceBase[T]) calculateNextRefreshTime(ctx context.Context, res *htt
 		if err == nil {
 			maxAge, ok := dir.MaxAge()
 			if ok {
-				traceSink.Put(ctx, fmt.Sprintf("Cache-Control=max-age directive set (%d)", maxAge))
+				traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Cache-Control=max-age directive set (%d)", r.URL(), maxAge))
 				interval := r.determineNextFetchInterval(
 					ctx,
 					"max-age",
@@ -319,7 +319,7 @@ func (r *ResourceBase[T]) calculateNextRefreshTime(ctx context.Context, res *htt
 	if v := res.Header.Get(`Expires`); v != "" {
 		expires, err := http.ParseTime(v)
 		if err == nil {
-			traceSink.Put(ctx, fmt.Sprintf("expires header set (%s)", expires))
+			traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Expires header set (%s)", r.URL(), expires))
 			interval := r.determineNextFetchInterval(
 				ctx,
 				"expires",
@@ -332,7 +332,7 @@ func (r *ResourceBase[T]) calculateNextRefreshTime(ctx context.Context, res *htt
 		// fallthrough
 	}
 
-	traceSink.Put(ctx, "No cache-control/expires headers found, using minimum interval")
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s No cache-control/expires headers found, using minimum interval", r.URL()))
 	// Previous fallthroughs are a little redandunt, but hey, it's all good.
 	return now.Add(r.MinInterval())
 }

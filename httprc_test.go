@@ -40,7 +40,7 @@ func TestClient(t *testing.T) {
 
 	start := time.Now()
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "max-age=1")
+		w.Header().Set("Cache-Control", "max-age=2")
 		var version string
 		if time.Since(start) > 2*time.Second {
 			version = "2"
@@ -87,7 +87,12 @@ func TestClient(t *testing.T) {
 		{
 			URL: srv.URL + "/json/helloptr",
 			Create: func() (httprc.Resource, error) {
-				return httprc.NewResource[*Hello](srv.URL+"/json/helloptr", httprc.JSONTransformer[*Hello]())
+				r, err := httprc.NewResource[*Hello](srv.URL+"/json/helloptr", httprc.JSONTransformer[*Hello]())
+				if err != nil {
+					return nil, err
+				}
+				r.SetMinInterval(time.Second)
+				return r, nil
 			},
 			Expected:  &Hello{Hello: "world"},
 			Expected2: &Hello{Hello: "world2"},
@@ -95,7 +100,12 @@ func TestClient(t *testing.T) {
 		{
 			URL: srv.URL + "/json/hello",
 			Create: func() (httprc.Resource, error) {
-				return httprc.NewResource[Hello](srv.URL+"/json/hello", httprc.JSONTransformer[Hello]())
+				r, err := httprc.NewResource[Hello](srv.URL+"/json/hello", httprc.JSONTransformer[Hello]())
+				if err != nil {
+					return nil, err
+				}
+				r.SetMinInterval(time.Second)
+				return r, nil
 			},
 			Expected:  Hello{Hello: "world"},
 			Expected2: Hello{Hello: "world2"},
@@ -103,7 +113,12 @@ func TestClient(t *testing.T) {
 		{
 			URL: srv.URL + "/json/hellomap",
 			Create: func() (httprc.Resource, error) {
-				return httprc.NewResource[map[string]interface{}](srv.URL+"/json/hellomap", httprc.JSONTransformer[map[string]interface{}]())
+				r, err := httprc.NewResource[map[string]interface{}](srv.URL+"/json/hellomap", httprc.JSONTransformer[map[string]interface{}]())
+				if err != nil {
+					return nil, err
+				}
+				r.SetMinInterval(time.Second)
+				return r, nil
 			},
 			Expected:  map[string]interface{}{"hello": "world"},
 			Expected2: map[string]interface{}{"hello": "world2"},
@@ -151,7 +166,7 @@ func TestClient(t *testing.T) {
 		})
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(6 * time.Second)
 	for _, tc := range testcases {
 		t.Run("Lookup "+tc.URL, func(t *testing.T) {
 			r, err := ctrl.Lookup(ctx, tc.URL)

@@ -8,8 +8,8 @@ import (
 )
 
 func (c *controller) adjustInterval(ctx context.Context, req adjustIntervalRequest) {
-	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: got adjust request (time until next check: %s)", time.Until(req.resource.Next())))
 	interval := roundupToSeconds(time.Until(req.resource.Next()))
+	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: got adjust request (current tick interval=%s, next for %q=%s)", c.tickInterval, req.resource.URL(), interval))
 
 	if c.tickInterval < interval {
 		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: no adjusting required (time to next check %s > current tick interval %s)", interval, c.tickInterval))
@@ -138,13 +138,16 @@ func (c *controller) loop(ctx context.Context, wg *sync.WaitGroup) {
 			c.handleRequest(ctx, req)
 		case t := <-c.check.C:
 			var minNext time.Time
+			var minInterval time.Duration = -1 * time.Second
 			var dispatched int
 			for _, item := range c.items {
 				next := item.Next()
-				if minNext.IsZero() {
-					minNext = item.Next()
-				} else if next.Before(minNext) {
+				if minNext.IsZero() || next.Before(minNext) {
 					minNext = next
+				}
+
+				if interval := item.MinInterval(); minInterval < 0 || interval < minInterval {
+					minInterval = interval
 				}
 
 				if item.IsBusy() || next.After(t) {
@@ -169,7 +172,7 @@ func (c *controller) loop(ctx context.Context, wg *sync.WaitGroup) {
 				// because we previously set ti to a small value for an immediate refresh.
 				// in this case, we want to reset it to a sane value
 				if c.tickInterval < time.Second {
-					c.SetTickInterval(defaultMinInterval)
+					c.SetTickInterval(minInterval)
 					c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: resetting check intervanl to %s after forced refresh", c.tickInterval))
 				}
 			}
