@@ -13,16 +13,26 @@ import (
 
 // Client is the main entry point for the httprc package.
 type Client struct {
-	mu         sync.Mutex
-	httpcl     HTTPClient
-	numWorkers int
-	running    bool
-	errSink    ErrorSink
-	traceSink  TraceSink
-	wl         Whitelist
+	mu                 sync.Mutex
+	httpcl             HTTPClient
+	numWorkers         int
+	running            bool
+	errSink            ErrorSink
+	traceSink          TraceSink
+	wl                 Whitelist
+	defaultMaxInterval time.Duration
+	defaultMinInterval time.Duration
 }
 
 const DefaultWorkers = 5
+
+// DefaultMaxInterval is the default maximum interval between fetches
+const DefaultMaxInterval = 24 * time.Hour * 30
+
+// DefaultMinInterval is the default minimum interval between fetches.
+const DefaultMinInterval = 15 * time.Minute
+
+// used internally
 const oneDay = 24 * time.Hour
 
 // NewClient creates a new `httprc.Client` object.
@@ -37,6 +47,9 @@ func NewClient(options ...NewClientOption) *Client {
 	var traceSink TraceSink = tracesink.NewNop()
 	var wl Whitelist = InsecureWhitelist{}
 	var httpcl HTTPClient = http.DefaultClient
+
+	defaultMinInterval := DefaultMinInterval
+	defaultMaxInterval := DefaultMaxInterval
 
 	numWorkers := DefaultWorkers
 	//nolint:forcetypeassert
@@ -64,6 +77,9 @@ func NewClient(options ...NewClientOption) *Client {
 		errSink:    errSink,
 		traceSink:  traceSink,
 		wl:         wl,
+
+		defaultMinInterval: defaultMinInterval,
+		defaultMaxInterval: defaultMaxInterval,
 	}
 }
 
@@ -144,6 +160,9 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 		check:        time.NewTicker(tickInterval),
 		shutdown:     make(chan struct{}),
 		wl:           c.wl,
+
+		defaultMinInterval: c.defaultMinInterval,
+		defaultMaxInterval: c.defaultMaxInterval,
 	}
 	wg.Add(1)
 	go ctrl.loop(ctx, &wg)

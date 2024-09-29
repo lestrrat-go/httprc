@@ -15,6 +15,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestResource(t *testing.T) {
+	const dummy = "https://127.0.0.1:99999999"
+	r, err := httprc.NewResource[[]byte](dummy, httprc.BytesTransformer())
+	require.NoError(t, err, `NewResource should succeed`)
+	require.Equal(t, httprc.DefaultMinInterval, r.MinInterval(), `r.MinInterval should return DefaultMinInterval`)
+	require.Equal(t, httprc.DefaultMaxInterval, r.MaxInterval(), `r.MaxInterval should return DefaultMaxInterval`)
+
+	r, err = httprc.NewResource[[]byte](dummy, httprc.BytesTransformer(), httprc.WithMinInterval(12*time.Second))
+	require.NoError(t, err, `NewResource should succeed`)
+	require.Equal(t, 12*time.Second, r.MinInterval(), `r.MinInterval should return expected value`)
+	require.Equal(t, httprc.DefaultMaxInterval, r.MaxInterval(), `r.MaxInterval should return DefaultMaxInterval`)
+
+	r, err = httprc.NewResource[[]byte](dummy, httprc.BytesTransformer(), httprc.WithMaxInterval(12*time.Second))
+	require.NoError(t, err, `NewResource should succeed`)
+	require.Equal(t, httprc.DefaultMinInterval, r.MinInterval(), `r.MinInterval should return DefaultMinInterval`)
+	require.Equal(t, 12*time.Second, r.MaxInterval(), `r.MaxInterval should return expected value`)
+}
+
 func TestClient(t *testing.T) {
 	type Hello struct {
 		Hello string `json:"hello"`

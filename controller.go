@@ -3,7 +3,6 @@ package httprc
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -44,6 +43,9 @@ type controller struct {
 	shutdown     chan struct{}
 
 	wl Whitelist
+
+	defaultMaxInterval time.Duration
+	defaultMinInterval time.Duration
 }
 
 // Shutdown is a convenience function that calls ShutdownContext with a
@@ -77,17 +79,34 @@ type ctrlRequest[T any] struct {
 	resource Resource
 	u        string
 }
-type lookupReply struct {
-	r   Resource
-	err error
-}
-
-type addRequest ctrlRequest[error]
-type rmRequest ctrlRequest[error]
-type refreshRequest ctrlRequest[error]
-type lookupRequest ctrlRequest[lookupReply]
+type addRequest ctrlRequest[backendResponse[struct{}]]
+type rmRequest ctrlRequest[backendResponse[struct{}]]
+type refreshRequest ctrlRequest[backendResponse[struct{}]]
+type lookupReply backendResponse[Resource]
+type lookupRequest ctrlRequest[backendResponse[Resource]]
+type synchronousRequest ctrlRequest[backendResponse[struct{}]]
 type adjustIntervalRequest struct {
 	resource Resource
+}
+
+type backendResponse[T any] struct {
+	payload T
+	err     error
+}
+
+func sendBackend[TReq any, TB any](ctx context.Context, backendCh chan any, v TReq, replyCh chan backendResponse[TB]) (TB, error) {
+	select {
+	case <-ctx.Done():
+	case backendCh <- v:
+	}
+
+	select {
+	case <-ctx.Done():
+		var zero TB
+		return zero, ctx.Err()
+	case res := <-replyCh:
+		return res.payload, res.err
+	}
 }
 
 // Lookup returns a resource by its URL. If the resource does not exist, it
@@ -99,23 +118,12 @@ type adjustIntervalRequest struct {
 // assertion to obtain a `ResourceBase[T]` to get to the actual object you are
 // looking for
 func (c *controller) Lookup(ctx context.Context, u string) (Resource, error) {
-	reply := make(chan lookupReply, 1)
+	reply := make(chan backendResponse[Resource], 1)
 	req := lookupRequest{
 		reply: reply,
 		u:     u,
 	}
-	select {
-	case c.incoming <- req:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case r := <-reply:
-		return r.r, r.err
-	}
+	return sendBackend[lookupRequest, Resource](ctx, c.incoming, req, reply)
 }
 
 // Add adds a new resource to the controller. If the resource already
@@ -125,46 +133,29 @@ func (c *controller) Add(ctx context.Context, r Resource) error {
 		return fmt.Errorf(`httprc.Controller.AddResource: cannot add %q: %w`, r.URL(), errBlockedByWhitelist)
 	}
 
-	reply := make(chan error, 1)
+	reply := make(chan backendResponse[struct{}], 1)
 	req := addRequest{
 		reply:    reply,
 		resource: r,
 	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case c.incoming <- req:
-	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-reply:
+	if _, err := sendBackend[addRequest, struct{}](ctx, c.incoming, req, reply); err != nil {
 		return err
 	}
+	return nil
 }
 
 // Remove removes a resource from the controller. If the resource does
 // not exist, it will return an error.
 func (c *controller) Remove(ctx context.Context, u string) error {
-	reply := make(chan error, 1)
+	reply := make(chan backendResponse[struct{}], 1)
 	req := rmRequest{
 		reply: reply,
 		u:     u,
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case c.incoming <- req:
-	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-reply:
+	if _, err := sendBackend[rmRequest, struct{}](ctx, c.incoming, req, reply); err != nil {
 		return err
 	}
+	return nil
 }
 
 // Refresh forces a resource to be refreshed immediately. If the resource does
@@ -172,158 +163,14 @@ func (c *controller) Remove(ctx context.Context, u string) error {
 //
 // This function is synchronous, and will block until the resource has been refreshed.
 func (c *controller) Refresh(ctx context.Context, u string) error {
-	reply := make(chan error, 1)
+	reply := make(chan backendResponse[struct{}], 1)
 	req := refreshRequest{
 		reply: reply,
 		u:     u,
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case c.incoming <- req:
-	}
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-reply:
+	if _, err := sendBackend[refreshRequest, struct{}](ctx, c.incoming, req, reply); err != nil {
 		return err
 	}
-}
-
-func (c *controller) handleRequest(ctx context.Context, req any) {
-	switch req := req.(type) {
-	case adjustIntervalRequest:
-		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: got adjust request (time until next check: %s)", time.Until(req.resource.Next())))
-		interval := time.Until(req.resource.Next())
-		diff := int64(interval) % int64(time.Second)
-		interval = time.Duration(int64(interval) - diff)
-		//nolint:mnd // oh, come on, I can divide by _two_
-		if diff > (int64(time.Second) / 2) {
-			interval += time.Second
-		}
-		if interval < time.Second {
-			interval = time.Second
-		}
-		if c.tickInterval < interval {
-			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: no adjusting required (time to next check %s > current tick interval %s)", interval, c.tickInterval))
-		} else {
-			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: adjusting tick interval to %s", interval))
-			c.tickInterval = interval
-			c.check.Reset(interval)
-		}
-	case addRequest:
-		r := req.resource
-		if _, ok := c.items[r.URL()]; ok {
-			// Already exists
-			sendReply(ctx, req.reply, errResourceAlreadyExists)
-			return
-		}
-		c.items[r.URL()] = r
-		closeReply(req.reply)
-
-		// force the next check to happen immediately
-		if d := r.ConstantInterval(); d > 0 {
-			c.tickInterval = d
-		} else if d := r.MinimumInterval(); d > 0 {
-			c.tickInterval = d
-		}
-
-		c.check.Reset(time.Nanosecond)
-	case rmRequest:
-		u := req.u
-		if _, ok := c.items[u]; !ok {
-			sendReply(ctx, req.reply, errResourceNotFound)
-			return
-		}
-
-		delete(c.items, u)
-
-		minInterval := oneDay
-		for _, item := range c.items {
-			if d := item.MinimumInterval(); d < minInterval {
-				minInterval = d
-			}
-		}
-
-		closeReply[error](req.reply)
-		c.check.Reset(minInterval)
-	case refreshRequest:
-		u := req.u
-		r, ok := c.items[u]
-		if !ok {
-			sendReply(ctx, req.reply, errResourceNotFound)
-			return
-		}
-		r.SetNext(time.Unix(0, 0))
-		sendWorkerSynchronous(ctx, c.syncoutgoing, synchronousRequest{
-			r:     r,
-			reply: req.reply,
-		})
-	case lookupRequest:
-		u := req.u
-		r, ok := c.items[u]
-		if !ok {
-			sendReply(ctx, req.reply, lookupReply{err: errResourceNotFound})
-			return
-		}
-		sendReply(ctx, req.reply, lookupReply{r: r})
-	}
-}
-
-func sendWorker(ctx context.Context, ch chan Resource, r Resource) {
-	r.SetBusy(true)
-	select {
-	case <-ctx.Done():
-	case ch <- r:
-	}
-}
-
-func sendWorkerSynchronous(ctx context.Context, ch chan synchronousRequest, r synchronousRequest) {
-	r.r.SetBusy(true)
-	select {
-	case <-ctx.Done():
-	case ch <- r:
-	}
-}
-
-func closeReply[T any](ch chan T) {
-	close(ch)
-}
-
-func sendReply[T any](ctx context.Context, ch chan T, v T) {
-	defer closeReply[T](ch)
-	select {
-	case <-ctx.Done():
-	case ch <- v:
-	}
-}
-
-func (c *controller) loop(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for {
-		select {
-		case req := <-c.incoming:
-			c.handleRequest(ctx, req)
-		case t := <-c.check.C:
-			// Always reset the ticker because the previous tick
-			// could have arrived by way of a forced tick
-			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: checking resources. Next check in %s", time.Now().Add(c.tickInterval)))
-
-			minInterval := c.tickInterval
-			for _, item := range c.items {
-				if minInterval > item.MinimumInterval() {
-					minInterval = item.MinimumInterval()
-				}
-				if item.IsBusy() || item.Next().After(t) {
-					continue
-				}
-				sendWorker(ctx, c.outgoing, item)
-			}
-			c.tickInterval = minInterval
-			c.check.Reset(c.tickInterval)
-		case <-ctx.Done():
-			return
-		}
-	}
+	return nil
 }

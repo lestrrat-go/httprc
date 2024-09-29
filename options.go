@@ -85,13 +85,24 @@ func WithHTTPClient(cl HTTPClient) NewClientResourceOption {
 
 type identMinimumInterval struct{}
 
-// WithMinimumInterval specifies the minimum interval between fetches.
+// WithMinInterval specifies the minimum interval between fetches.
 //
-// Normally the interval between fetches is determined by the response's Cache-Control
-// or Expires headers, but if the interval calculated by these headers is less than
-// the value specified here, the interval will be adjusted to this value.
-func WithMinimumInterval(d time.Duration) NewResourceOption {
+// This option affects the dynamic calculation of the interval between fetches.
+// If the value calculated from the http.Response is less than the this value,
+// the client will use this value instead.
+func WithMinInterval(d time.Duration) NewResourceOption {
 	return newResourceOption{option.New(identMinimumInterval{}, d)}
+}
+
+type identMaximumInterval struct{}
+
+// WithMaxInterval specifies the maximum interval between fetches.
+//
+// This option affects the dynamic calculation of the interval between fetches.
+// If the value calculated from the http.Response is greater than the this value,
+// the client will use this value instead.
+func WithMaxInterval(d time.Duration) NewResourceOption {
+	return newResourceOption{option.New(identMaximumInterval{}, d)}
 }
 
 type identConstantInterval struct{}

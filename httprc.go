@@ -9,6 +9,14 @@ import (
 	"github.com/lestrrat-go/httprc/v3/tracesink"
 )
 
+// utility to round up intervals to the nearest second
+func roundupToSeconds(d time.Duration) time.Duration {
+	if diff := d % time.Second; diff > 0 {
+		return d + time.Second - diff
+	}
+	return d
+}
+
 // ErrorSink is an interface that abstracts a sink for errors.
 type ErrorSink = errsink.Interface
 
@@ -48,7 +56,10 @@ type Resource interface {
 	URL() string
 	Sync(context.Context) error
 	ConstantInterval() time.Duration
-	MinimumInterval() time.Duration
+	MaxInterval() time.Duration
+	SetMaxInterval(time.Duration)
+	MinInterval() time.Duration
+	SetMinInterval(time.Duration)
 	IsBusy() bool
 	SetBusy(bool)
 	Ready(context.Context) error

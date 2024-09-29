@@ -6,11 +6,6 @@ import (
 	"sync"
 )
 
-type synchronousRequest struct {
-	r     Resource
-	reply chan error
-}
-
 type worker struct {
 	httpcl    HTTPClient
 	incoming  chan any
@@ -39,15 +34,15 @@ func (w worker) Run(ctx context.Context, wg *sync.WaitGroup) {
 			case w.incoming <- adjustIntervalRequest{resource: r}:
 			}
 		case sr := <-w.nextsync:
-			w.traceSink.Put(ctx, fmt.Sprintf("httprc worker: syncing %q (synchronous)", sr.r.URL()))
-			if err := sr.r.Sync(ctx); err != nil {
-				sendReply(ctx, sr.reply, err)
+			w.traceSink.Put(ctx, fmt.Sprintf("httprc worker: syncing %q (synchronous)", sr.resource.URL()))
+			if err := sr.resource.Sync(ctx); err != nil {
+				sendReply(ctx, sr.reply, struct{}{}, err)
 			}
-			sr.r.SetBusy(false)
-			sendReply(ctx, sr.reply, nil)
+			sr.resource.SetBusy(false)
+			sendReply(ctx, sr.reply, struct{}{}, nil)
 			select {
 			case <-ctx.Done():
-			case w.incoming <- adjustIntervalRequest{resource: sr.r}:
+			case w.incoming <- adjustIntervalRequest{resource: sr.resource}:
 			}
 		}
 	}

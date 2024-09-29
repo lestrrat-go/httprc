@@ -17,6 +17,7 @@ import (
 
 const ReadBufferSize = 1024 * 1024 * 10  // 10MB
 const MaxBufferSize = 1024 * 1024 * 1000 // 1GB
+
 const defaultMinInterval = 15 * time.Minute
 
 // ResourceBase is a generic Resource type
@@ -30,6 +31,7 @@ type ResourceBase[T any] struct {
 	next        atomic.Value
 	interval    time.Duration
 	minInterval atomic.Int64
+	maxInterval atomic.Int64
 	busy        atomic.Bool
 }
 
@@ -42,7 +44,8 @@ type ResourceBase[T any] struct {
 func NewResource[T any](s string, transformer Transformer[T], options ...NewResourceOption) (*ResourceBase[T], error) {
 	var httpcl HTTPClient
 	var interval time.Duration
-	minInterval := defaultMinInterval
+	minInterval := DefaultMinInterval
+	maxInterval := DefaultMaxInterval
 	//nolint:forcetypeassert
 	for _, option := range options {
 		switch option.Ident() {
@@ -50,6 +53,8 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 			httpcl = option.Value().(HTTPClient)
 		case identMinimumInterval{}:
 			minInterval = option.Value().(time.Duration)
+		case identMaximumInterval{}:
+			maxInterval = option.Value().(time.Duration)
 		case identConstantInterval{}:
 			interval = option.Value().(time.Duration)
 		}
@@ -72,6 +77,7 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 		r.httpcl = httpcl
 	}
 	r.minInterval.Store(int64(minInterval))
+	r.maxInterval.Store(int64(maxInterval))
 	r.SetNext(time.Unix(0, 0)) // initially, it should be fetched immediately
 	return r, nil
 }
@@ -137,8 +143,20 @@ func (r *ResourceBase[T]) ConstantInterval() time.Duration {
 	return r.interval
 }
 
-func (r *ResourceBase[T]) MinimumInterval() time.Duration {
+func (r *ResourceBase[T]) MaxInterval() time.Duration {
+	return time.Duration(r.maxInterval.Load())
+}
+
+func (r *ResourceBase[T]) MinInterval() time.Duration {
 	return time.Duration(r.minInterval.Load())
+}
+
+func (r *ResourceBase[T]) SetMaxInterval(v time.Duration) {
+	r.maxInterval.Store(int64(v))
+}
+
+func (r *ResourceBase[T]) SetMinInterval(v time.Duration) {
+	r.minInterval.Store(int64(v))
 }
 
 func (r *ResourceBase[T]) SetBusy(v bool) {
@@ -212,7 +230,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	}
 	defer res.Body.Close()
 
-	next := calculateNextRefreshTime(ctx, traceSink, res, r.interval, r.MinimumInterval())
+	next := r.calculateNextRefreshTime(ctx, res)
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: next refresh time for %q is %v", r.u, next))
 	r.SetNext(next)
 
@@ -249,50 +267,72 @@ func (r *ResourceBase[T]) transform(ctx context.Context, res *http.Response) (re
 	return r.t.Transform(ctx, res)
 }
 
-func calculateNextRefreshTime(ctx context.Context, traceSink TraceSink, res *http.Response, interval, minInterval time.Duration) time.Time {
+func (r *ResourceBase[T]) determineNextFetchInterval(ctx context.Context, name string, fromHeader, min, max time.Duration) time.Duration {
+	traceSink := traceSinkFromContext(ctx)
+
+	if fromHeader > max {
+		traceSink.Put(ctx, fmt.Sprintf("%s > maximum interval, using maximum interval %s", name, max))
+		return max
+	}
+
+	if fromHeader < min {
+		traceSink.Put(ctx, fmt.Sprintf("%s < minimum interval, using minimum interval %s", name, min))
+		return min
+	}
+
+	traceSink.Put(ctx, fmt.Sprintf("Using %s (%d)", name, fromHeader))
+	return fromHeader
+}
+
+func (r *ResourceBase[T]) calculateNextRefreshTime(ctx context.Context, res *http.Response) time.Time {
+	traceSink := traceSinkFromContext(ctx)
+
 	now := time.Now()
-	if interval > 0 {
+
+	// If constant interval is set, use that regardless of what the
+	// response headers say.
+	if interval := r.ConstantInterval(); interval > 0 {
 		traceSink.Put(ctx, fmt.Sprintf("Explicit interval set, using value %s", interval))
 		return now.Add(interval)
 	}
 
-	if res != nil {
-		if v := res.Header.Get(`Cache-Control`); v != "" {
-			dir, err := httpcc.ParseResponse(v)
-			if err == nil {
-				maxAge, ok := dir.MaxAge()
-				if ok {
-					traceSink.Put(ctx, fmt.Sprintf("max-age header set (%d)", maxAge))
-					resDuration := time.Duration(maxAge) * time.Second
-					if resDuration >= minInterval {
-						traceSink.Put(ctx, fmt.Sprintf("max-age >= minimum interval, using minimum interval %s instead", minInterval))
-						return now.Add(minInterval)
-					}
-					traceSink.Put(ctx, "max-age < minimum interval, using max-age")
-					return now.Add(resDuration)
-				}
-				// fallthrough
+	if v := res.Header.Get(`Cache-Control`); v != "" {
+		dir, err := httpcc.ParseResponse(v)
+		if err == nil {
+			maxAge, ok := dir.MaxAge()
+			if ok {
+				traceSink.Put(ctx, fmt.Sprintf("Cache-Control=max-age directive set (%d)", maxAge))
+				interval := r.determineNextFetchInterval(
+					ctx,
+					"max-age",
+					time.Duration(maxAge)*time.Second,
+					r.MinInterval(),
+					r.MaxInterval(),
+				)
+				return now.Add(interval)
 			}
 			// fallthrough
 		}
+		// fallthrough
+	}
 
-		if v := res.Header.Get(`Expires`); v != "" {
-			expires, err := http.ParseTime(v)
-			if err == nil {
-				traceSink.Put(ctx, fmt.Sprintf("mage-age header set (%s)", expires))
-				resDuration := time.Until(expires)
-				if resDuration >= minInterval {
-					traceSink.Put(ctx, fmt.Sprintf("expires >= minimum interval, using minimum interval %s instead", minInterval))
-					return now.Add(resDuration)
-				}
-				traceSink.Put(ctx, "expires < minimum interval, using expires")
-				return now.Add(minInterval)
-			}
-			// fallthrough
+	if v := res.Header.Get(`Expires`); v != "" {
+		expires, err := http.ParseTime(v)
+		if err == nil {
+			traceSink.Put(ctx, fmt.Sprintf("expires header set (%s)", expires))
+			interval := r.determineNextFetchInterval(
+				ctx,
+				"expires",
+				time.Until(expires),
+				r.MinInterval(),
+				r.MaxInterval(),
+			)
+			return now.Add(interval)
 		}
+		// fallthrough
 	}
 
 	traceSink.Put(ctx, "No cache-control/expires headers found, using minimum interval")
 	// Previous fallthroughs are a little redandunt, but hey, it's all good.
-	return now.Add(minInterval)
+	return now.Add(r.MinInterval())
 }
