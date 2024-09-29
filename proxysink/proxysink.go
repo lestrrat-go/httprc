@@ -30,6 +30,7 @@ func New[T any](b Backend[T]) *Proxy[T] {
 }
 
 func (p *Proxy[T]) Run(ctx context.Context) {
+	defer p.cond.Broadcast()
 	go p.controlloop(ctx)
 	go p.flushloop(ctx)
 
@@ -37,6 +38,7 @@ func (p *Proxy[T]) Run(ctx context.Context) {
 }
 
 func (p *Proxy[T]) controlloop(ctx context.Context) {
+	defer p.cond.Broadcast()
 	for {
 		select {
 		case <-ctx.Done():
