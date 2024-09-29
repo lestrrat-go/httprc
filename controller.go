@@ -82,7 +82,6 @@ type ctrlRequest[T any] struct {
 type addRequest ctrlRequest[backendResponse[struct{}]]
 type rmRequest ctrlRequest[backendResponse[struct{}]]
 type refreshRequest ctrlRequest[backendResponse[struct{}]]
-type lookupReply backendResponse[Resource]
 type lookupRequest ctrlRequest[backendResponse[Resource]]
 type synchronousRequest ctrlRequest[backendResponse[struct{}]]
 type adjustIntervalRequest struct {

@@ -18,8 +18,6 @@ import (
 const ReadBufferSize = 1024 * 1024 * 10  // 10MB
 const MaxBufferSize = 1024 * 1024 * 1000 // 1GB
 
-const defaultMinInterval = 15 * time.Minute
-
 // ResourceBase is a generic Resource type
 type ResourceBase[T any] struct {
 	u           string
@@ -267,17 +265,17 @@ func (r *ResourceBase[T]) transform(ctx context.Context, res *http.Response) (re
 	return r.t.Transform(ctx, res)
 }
 
-func (r *ResourceBase[T]) determineNextFetchInterval(ctx context.Context, name string, fromHeader, min, max time.Duration) time.Duration {
+func (r *ResourceBase[T]) determineNextFetchInterval(ctx context.Context, name string, fromHeader, minValue, maxValue time.Duration) time.Duration {
 	traceSink := traceSinkFromContext(ctx)
 
-	if fromHeader > max {
-		traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s %s > maximum interval, using maximum interval %s", r.URL(), name, max))
-		return max
+	if fromHeader > maxValue {
+		traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s %s > maximum interval, using maximum interval %s", r.URL(), name, maxValue))
+		return maxValue
 	}
 
-	if fromHeader < min {
-		traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s %s < minimum interval, using minimum interval %s", r.URL(), name, min))
-		return min
+	if fromHeader < minValue {
+		traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s %s < minimum interval, using minimum interval %s", r.URL(), name, minValue))
+		return minValue
 	}
 
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Using %s (%s)", r.URL(), name, fromHeader))

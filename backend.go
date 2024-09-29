@@ -138,8 +138,8 @@ func (c *controller) loop(ctx context.Context, wg *sync.WaitGroup) {
 			c.handleRequest(ctx, req)
 		case t := <-c.check.C:
 			var minNext time.Time
-			var minInterval time.Duration = -1 * time.Second
 			var dispatched int
+			minInterval := -1 * time.Second
 			for _, item := range c.items {
 				next := item.Next()
 				if minNext.IsZero() || next.Before(minNext) {

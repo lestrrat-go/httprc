@@ -49,7 +49,7 @@ func (f TransformFunc[T]) Transform(ctx context.Context, res *http.Response) (T,
 // into a single collection.
 //
 // See ResourceBase for details
-type Resource interface {
+type Resource interface { //nolint:interfacebloat
 	Get(any) error
 	Next() time.Time
 	SetNext(time.Time)
