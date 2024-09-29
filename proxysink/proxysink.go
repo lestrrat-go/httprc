@@ -69,6 +69,7 @@ func (p *Proxy[T]) flushloop(ctx context.Context) {
 		for len(p.pending) <= 0 {
 			p.cond.Wait()
 		}
+
 		// extract all pending values, and clear the shared slice
 		if cap(pending) < len(p.pending) {
 			pending = make([]T, len(p.pending))
@@ -77,7 +78,7 @@ func (p *Proxy[T]) flushloop(ctx context.Context) {
 		}
 		copy(pending, p.pending)
 		if cap(p.pending) > defaultPendingSize {
-			p.pending = make([]T, defaultPendingSize)
+			p.pending = make([]T, 0, defaultPendingSize)
 		} else {
 			p.pending = p.pending[:0]
 		}
