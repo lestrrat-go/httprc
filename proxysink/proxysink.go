@@ -40,9 +40,6 @@ func (p *Proxy[T]) controlloop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			p.mu.Lock()
-			close(p.ch)
-			p.mu.Unlock()
 			return
 		case r := <-p.ch:
 			p.mu.Lock()
@@ -102,4 +99,10 @@ func (p *Proxy[T]) Put(ctx context.Context, v T) {
 	case p.ch <- v:
 		return
 	}
+}
+
+func (p *Proxy[T]) Close() {
+	p.mu.Lock()
+	close(p.ch)
+	p.mu.Unlock()
 }

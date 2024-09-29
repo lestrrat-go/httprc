@@ -129,6 +129,13 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 			defer wg.Done()
 			proxy.Run(ctx)
 		}(&wg, proxy)
+
+		ocancel := cancel
+		cancel = func() {
+			ocancel()
+			proxy.Close()
+		}
+
 		traceSink = proxy
 	}
 
