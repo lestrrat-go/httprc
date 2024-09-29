@@ -12,7 +12,7 @@ type Backend[T any] interface {
 // Proxy is used to send values through a channel. This is used to
 // serialize calls to underlying sinks.
 type Proxy[T any] struct {
-	mu      *sync.Mutex
+	mu      *sync.RWMutex
 	ch      chan T
 	cond    *sync.Cond
 	pending []T
@@ -20,7 +20,7 @@ type Proxy[T any] struct {
 }
 
 func New[T any](b Backend[T]) *Proxy[T] {
-	mu := &sync.Mutex{}
+	mu := &sync.RWMutex{}
 	return &Proxy[T]{
 		ch:      make(chan T, 1),
 		mu:      mu,
@@ -40,7 +40,9 @@ func (p *Proxy[T]) controlloop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			p.mu.Lock()
 			close(p.ch)
+			p.mu.Unlock()
 			return
 		case r := <-p.ch:
 			p.mu.Lock()
@@ -92,6 +94,8 @@ func (p *Proxy[T]) flushloop(ctx context.Context) {
 }
 
 func (p *Proxy[T]) Put(ctx context.Context, v T) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	select {
 	case <-ctx.Done():
 		return
