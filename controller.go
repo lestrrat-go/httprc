@@ -133,12 +133,12 @@ func (c *controller) Lookup(ctx context.Context, u string) (Resource, error) {
 // timeout unless you configure your context object with `context.WithTimeout`.
 // To disable waiting, you can specify the `WithWaitReady(false)` option.
 func (c *controller) Add(ctx context.Context, r Resource, options ...AddOption) error {
-	var waitReady bool
+	waitReady := true
 	//nolint:forcetypeassert
 	for _, option := range options {
 		switch option.Ident() {
 		case identWaitReady{}:
-			waitReady = option.(newAddOption).Value().(bool)
+			waitReady = option.(addOption).Value().(bool)
 		}
 	}
 

@@ -62,7 +62,7 @@ func ExampleClient() {
 	// By default, a call to `Add()` will block until the first fetch
 	// succeeds, but you can skip this if you specify the `WithWaitReady(false)`
 	// option.
-	ctrl.Add(ctx, r, httprc.WithWaitReady(false))
+	ctrl.Add(ctx, r)
 
 	// if you specified `httprc.WithWaitReady(false)` option, the fetch will happen
 	// "soon", but you're not guaranteed that it will happen before the next

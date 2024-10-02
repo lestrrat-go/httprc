@@ -121,11 +121,11 @@ type AddOption interface {
 	newAddOption()
 }
 
-type newAddOption struct {
+type addOption struct {
 	option.Interface
 }
 
-func (newAddOption) newAddOption() {}
+func (addOption) newAddOption() {}
 
 type identWaitReady struct{}
 
@@ -134,5 +134,5 @@ type identWaitReady struct{}
 //
 // By default, the client will wait for the resource to be ready before returning.
 func WithWaitReady(b bool) AddOption {
-	return newAddOption{option.New(identWaitReady{}, b)}
+	return addOption{option.New(identWaitReady{}, b)}
 }
