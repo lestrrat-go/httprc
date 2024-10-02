@@ -9,7 +9,7 @@ import (
 type Controller interface {
 	// Add adds a new `http.Resource` to the controller. If the resource already exists,
 	// it will return an error.
-	Add(context.Context, Resource) error
+	Add(context.Context, Resource, ...AddOption) error
 
 	// Lookup a `httprc.Resource` by its URL. If the resource does not exist, it
 	// will return an error.
@@ -127,7 +127,21 @@ func (c *controller) Lookup(ctx context.Context, u string) (Resource, error) {
 
 // Add adds a new resource to the controller. If the resource already
 // exists, it will return an error.
-func (c *controller) Add(ctx context.Context, r Resource) error {
+//
+// By default this function will automatically wait for the resource to be
+// fetched once (by calling `r.Ready()`). Note that the `r.Ready()` call will NOT
+// timeout unless you configure your context object with `context.WithTimeout`.
+// To disable waiting, you can specify the `WithWaitReady(false)` option.
+func (c *controller) Add(ctx context.Context, r Resource, options ...AddOption) error {
+	var waitReady bool
+	//nolint:forcetypeassert
+	for _, option := range options {
+		switch option.Ident() {
+		case identWaitReady{}:
+			waitReady = option.(newAddOption).Value().(bool)
+		}
+	}
+
 	if !c.wl.IsAllowed(r.URL()) {
 		return fmt.Errorf(`httprc.Controller.AddResource: cannot add %q: %w`, r.URL(), errBlockedByWhitelist)
 	}
@@ -139,6 +153,12 @@ func (c *controller) Add(ctx context.Context, r Resource) error {
 	}
 	if _, err := sendBackend[addRequest, struct{}](ctx, c.incoming, req, reply); err != nil {
 		return err
+	}
+
+	if waitReady {
+		if err := r.Ready(ctx); err != nil {
+			return err
+		}
 	}
 	return nil
 }

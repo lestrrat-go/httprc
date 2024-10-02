@@ -58,17 +58,26 @@ func ExampleClient() {
 		return
 	}
 
-	// Add the resource to the controller, so that it starts fetching
-	ctrl.Add(ctx, r)
+	// Add the resource to the controller, so that it starts fetching.
+	// By default, a call to `Add()` will block until the first fetch
+	// succeeds, but you can skip this if you specify the `WithWaitReady(false)`
+	// option.
+	ctrl.Add(ctx, r, httprc.WithWaitReady(false))
 
-	{
-		tctx, tcancel := context.WithTimeout(ctx, time.Second)
-		defer tcancel()
-		if err := r.Ready(tctx); err != nil {
-			fmt.Println(err.Error())
-			return
+	// if you specified `httprc.WithWaitReady(false)` option, the fetch will happen
+	// "soon", but you're not guaranteed that it will happen before the next
+	// call to `Lookup()`. If you want to make sure that the resource is ready,
+	// you can call `Ready()` like so:
+	/*
+		{
+			tctx, tcancel := context.WithTimeout(ctx, time.Second)
+			defer tcancel()
+			if err := r.Ready(tctx); err != nil {
+				fmt.Println(err.Error())
+				return
+			}
 		}
-	}
+	*/
 	m := r.Resource()
 	fmt.Println(m.Hello)
 	// OUTPUT:

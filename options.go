@@ -115,3 +115,24 @@ type identConstantInterval struct{}
 func WithConstantInterval(d time.Duration) NewResourceOption {
 	return newResourceOption{option.New(identConstantInterval{}, d)}
 }
+
+type AddOption interface {
+	option.Interface
+	newAddOption()
+}
+
+type newAddOption struct {
+	option.Interface
+}
+
+func (newAddOption) newAddOption() {}
+
+type identWaitReady struct{}
+
+// WithWaitReady specifies whether the client should wait for the resource to be
+// ready before returning from the Add method.
+//
+// By default, the client will wait for the resource to be ready before returning.
+func WithWaitReady(b bool) AddOption {
+	return newAddOption{option.New(identWaitReady{}, b)}
+}
