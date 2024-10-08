@@ -5,6 +5,12 @@ use File::Temp;
 # Accept a list of filenames, and process them
 # if any of them has a diff, commit it
 
+# Use GITHUB_REF, but if the ref is develop/v\d, then use v\d
+my $link_ref = $ENV{GITHUB_REF};
+if ($link_ref =~ /^(?:refs\/heads\/)?develop\/(v\d+)$/) {
+    $link_ref = $1;
+}
+
 my @files = @ARGV;
 my @has_diff;
 for my $filename (@files) {
