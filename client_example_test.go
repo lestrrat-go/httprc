@@ -24,6 +24,10 @@ func ExampleClient() {
 	}))
 
 	options := []httprc.NewClientOption{
+		// By default the client will allow all URLs (which is what the option
+		// below is explicitly specifying). If you want to restrict what URLs
+		// are allowed, you can specify another whitelist.
+		//
 		//		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
 	}
 	// If you would like to handle errors from asynchronous workers, you can specify a error sink.
@@ -52,6 +56,14 @@ func ExampleClient() {
 	defer ctrl.Shutdown(time.Second)
 
 	// Create a new resource that is synchronized every so often
+	//
+	// By default the client will attempt to fetch the resource once
+	// as soon as it can, and then if no other metadata is provided,
+	// it will fetch the resource every 15 minutes.
+	//
+	// If the resource responds with a Cache-Control/Expires header,
+	// the client will attempt to respect that, and will try to fetch
+	// the resource again based on the values obatained from the headers.
 	r, err := httprc.NewResource[HelloWorld](srv.URL, httprc.JSONTransformer[HelloWorld]())
 	if err != nil {
 		fmt.Println(err.Error())
