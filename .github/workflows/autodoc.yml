@@ -2,9 +2,10 @@ name: Auto-Doc
 on: 
   pull_request:
     branches:
-      - main
+      - v3
     types:
       - closed
+  workflow_dispatch: {}
 
 jobs:
   autodoc:
