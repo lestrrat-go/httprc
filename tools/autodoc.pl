@@ -7,6 +7,7 @@ use File::Temp;
 
 # Use GITHUB_REF, but if the ref is develop/v\d, then use v\d
 my $link_ref = $ENV{GITHUB_REF};
+$link_ref =~ s{^origin/refs/heads/}{};
 
 my @files = @ARGV;
 my @has_diff;
