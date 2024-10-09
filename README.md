@@ -95,6 +95,10 @@ func ExampleClient() {
   }))
 
   options := []httprc.NewClientOption{
+    // By default the client will allow all URLs (which is what the option
+    // below is explicitly specifying). If you want to restrict what URLs
+    // are allowed, you can specify another whitelist.
+    //
     //		httprc.WithWhitelist(httprc.NewInsecureWhitelist()),
   }
   // If you would like to handle errors from asynchronous workers, you can specify a error sink.
@@ -123,28 +127,46 @@ func ExampleClient() {
   defer ctrl.Shutdown(time.Second)
 
   // Create a new resource that is synchronized every so often
+  //
+  // By default the client will attempt to fetch the resource once
+  // as soon as it can, and then if no other metadata is provided,
+  // it will fetch the resource every 15 minutes.
+  //
+  // If the resource responds with a Cache-Control/Expires header,
+  // the client will attempt to respect that, and will try to fetch
+  // the resource again based on the values obatained from the headers.
   r, err := httprc.NewResource[HelloWorld](srv.URL, httprc.JSONTransformer[HelloWorld]())
   if err != nil {
     fmt.Println(err.Error())
     return
   }
 
-  // Add the resource to the controller, so that it starts fetching
+  // Add the resource to the controller, so that it starts fetching.
+  // By default, a call to `Add()` will block until the first fetch
+  // succeeds, via an implicit call to `r.Ready()`
+  // You can change this behavior if you specify the `WithWaitReady(false)`
+  // option.
   ctrl.Add(ctx, r)
 
-  {
-    tctx, tcancel := context.WithTimeout(ctx, time.Second)
-    defer tcancel()
-    if err := r.Ready(tctx); err != nil {
-      fmt.Println(err.Error())
-      return
+  // if you specified `httprc.WithWaitReady(false)` option, the fetch will happen
+  // "soon", but you're not guaranteed that it will happen before the next
+  // call to `Lookup()`. If you want to make sure that the resource is ready,
+  // you can call `Ready()` like so:
+  /*
+    {
+      tctx, tcancel := context.WithTimeout(ctx, time.Second)
+      defer tcancel()
+      if err := r.Ready(tctx); err != nil {
+        fmt.Println(err.Error())
+        return
+      }
     }
-  }
+  */
   m := r.Resource()
   fmt.Println(m.Hello)
   // OUTPUT:
   // world
 }
 ```
-source: [client_example_test.go](https://github.com/lestrrat-go/httprc/blob/v3/client_example_test.go)
+source: [client_example_test.go](https://github.com/lestrrat-go/httprc/blob/refs/heads/v3/client_example_test.go)
 <!-- END INCLUDE -->
