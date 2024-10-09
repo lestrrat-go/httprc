@@ -72,7 +72,8 @@ func ExampleClient() {
 
 	// Add the resource to the controller, so that it starts fetching.
 	// By default, a call to `Add()` will block until the first fetch
-	// succeeds, but you can skip this if you specify the `WithWaitReady(false)`
+	// succeeds, via an implicit call to `r.Ready()`
+	// You can change this behavior if you specify the `WithWaitReady(false)`
 	// option.
 	ctrl.Add(ctx, r)
 
