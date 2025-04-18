@@ -233,7 +233,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	r.SetNext(next)
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf(`httprc.Resource.Sync: %w (status code=%d)`, errUnexpectedStatusCode, res.StatusCode)
+		return fmt.Errorf(`httprc.Resource.Sync: %w (status code=%d, url=%q)`, errUnexpectedStatusCode, res.StatusCode, r.u)
 	}
 
 	// replace the body of the response with a limited reader that
