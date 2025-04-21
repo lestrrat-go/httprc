@@ -35,7 +35,7 @@ The other is to periodically wake up and go through the list of resources and re
 ones that are past their TTL (in reality, each resource carry a "next-check" time, not
 a TTL). The main controller loop itself does nothing more: it just kicks these checks periodically.
 
-The interval between is changed dynamically based on either metadata carried
+The interval between fetches is changed dynamically based on either the metadata carried
 with the HTTP responses, such as `Cache-Control` and `Expires` headers, or a constant
 interval set by the user for a given resource. Between these values, the main controller loop
 will pick the shortest interval (but no less than 1 second) and checks if resources
