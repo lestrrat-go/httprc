@@ -41,9 +41,9 @@ const oneDay = 24 * time.Hour
 // are using this in a production environment. You are encouraged to specify
 // a whitelist using the `WithWhitelist` option.
 func NewClient(options ...NewClientOption) *Client {
-	//nolint:stylecheck
+	//nolint:staticcheck
 	var errSink ErrorSink = errsink.NewNop()
-	//nolint:stylecheck
+	//nolint:staticcheck
 	var traceSink TraceSink = tracesink.NewNop()
 	var wl Whitelist = InsecureWhitelist{}
 	var httpcl HTTPClient = http.DefaultClient
