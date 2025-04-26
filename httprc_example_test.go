@@ -21,7 +21,7 @@ func ExampleCache() {
 
 	msg := helloWorld
 
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(`Cache-Control`, fmt.Sprintf(`max-age=%d`, 2))
 		w.WriteHeader(http.StatusOK)
 		mu.RLock()

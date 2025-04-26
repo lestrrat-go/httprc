@@ -2,6 +2,7 @@ package httprc_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,7 @@ func TestCache(t *testing.T) {
 
 	var muCalled sync.Mutex
 	var called int
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
@@ -84,7 +85,7 @@ func TestCache(t *testing.T) {
 		httprc.WithHTTPClient(srv.Client()),
 		httprc.WithMinRefreshInterval(time.Second),
 		httprc.WithTransformer(httprc.TransformFunc(func(_ string, _ *http.Response) (interface{}, error) {
-			return nil, fmt.Errorf(`dummy error`)
+			return nil, errors.New(`dummy error`)
 		})),
 	)
 
