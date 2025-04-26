@@ -1,6 +1,7 @@
 module github.com/lestrrat-go/httprc/v3
 
-go 1.22.6
+go 1.23
+
 toolchain go1.24.1
 
 require (
