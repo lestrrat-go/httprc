@@ -216,10 +216,10 @@ func (q *queue) refreshLoop(ctx context.Context, errSink ErrSink) {
 			// items, and release the lock within this critical section
 			var list []*rqentry
 			q.mu.Lock()
-			var max int
+			var maxVal int
 			for i, r := range q.list {
 				if r.fireAt.Before(t) || r.fireAt.Equal(t) {
-					max = i
+					maxVal = i
 					list = append(list, r)
 					continue
 				}
@@ -227,7 +227,7 @@ func (q *queue) refreshLoop(ctx context.Context, errSink ErrSink) {
 			}
 
 			if len(list) > 0 {
-				q.list = q.list[max+1:]
+				q.list = q.list[maxVal+1:]
 			}
 			q.mu.Unlock() // release lock
 

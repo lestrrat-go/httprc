@@ -11,11 +11,10 @@ linters:
   enable-all: true
   disable:
     - cyclop
-    - deadcode # deprecated
     - depguard
     - dupl
     - exhaustive
-    - exhaustivestruct
+    - err113
     - errorlint
     - funlen
     - gci
@@ -26,31 +25,23 @@ linters:
     - gocyclo
     - godot
     - godox
-    - goerr113
     - gofumpt
-    - golint #deprecated
-    - gomnd
     - gosec
     - govet
-    - interfacer # deprecated
-    - ifshort
+    - inamedparam
     - ireturn # No, I _LIKE_ returning interfaces
     - lll
     - maintidx # Do this in code review
-    - maligned # deprecated
     - makezero
+    - mnd
     - nakedret
     - nestif
     - nlreturn
     - nonamedreturns # visit this back later
-    - nosnakecase
     - paralleltest
-    - scopelint # deprecated
-    - structcheck # deprecated
     - tagliatelle
     - testpackage
     - thelper    # Tests are fine
-    - varcheck # deprecated
     - varnamelen # Short names are ok
     - wrapcheck
     - wsl
