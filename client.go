@@ -11,6 +11,24 @@ import (
 	"github.com/lestrrat-go/httprc/v3/tracesink"
 )
 
+// setupSink creates and starts a proxy for the given sink if it's not a Nop sink
+// Returns the sink to use and a cancel function that should be chained with the original cancel
+func setupSink[T any, S proxysink.Backend[T], NopType any](ctx context.Context, sink S, wg *sync.WaitGroup) (S, context.CancelFunc) {
+	if _, ok := any(sink).(NopType); ok {
+		return sink, func() {}
+	}
+
+	proxy := proxysink.New[T](sink)
+	wg.Add(1)
+	go func(ctx context.Context, wg *sync.WaitGroup, proxy *proxysink.Proxy[T]) {
+		defer wg.Done()
+		proxy.Run(ctx)
+	}(ctx, wg, proxy)
+
+	// proxy can be converted to one of the sink subtypes
+	return any(proxy).(S), proxy.Close
+}
+
 // Client is the main entry point for the httprc package.
 type Client struct {
 	mu                 sync.Mutex
@@ -94,38 +112,15 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 
 	// start proxy goroutines that will accept sink requests
 	// and forward them to the appropriate sink
-	var errSink ErrorSink
-	if _, ok := c.errSink.(errsink.Nop); ok {
-		errSink = c.errSink
-	} else {
-		proxy := proxysink.New[error](c.errSink)
-		wg.Add(1)
-		go func(wg *sync.WaitGroup, proxy *proxysink.Proxy[error]) {
-			defer wg.Done()
-			proxy.Run(ctx)
-		}(&wg, proxy)
+	errSink, errCancel := setupSink[error, ErrorSink, errsink.Nop](ctx, c.errSink, &wg)
+	traceSink, traceCancel := setupSink[string, TraceSink, tracesink.Nop](ctx, c.traceSink, &wg)
 
-		errSink = proxy
-	}
-
-	var traceSink TraceSink
-	if _, ok := c.traceSink.(tracesink.Nop); ok {
-		traceSink = c.traceSink
-	} else {
-		proxy := proxysink.New[string](c.traceSink)
-		wg.Add(1)
-		go func(wg *sync.WaitGroup, proxy *proxysink.Proxy[string]) {
-			defer wg.Done()
-			proxy.Run(ctx)
-		}(&wg, proxy)
-
-		ocancel := cancel
-		cancel = func() {
-			ocancel()
-			proxy.Close()
-		}
-
-		traceSink = proxy
+	// Chain the cancel functions
+	ocancel := cancel
+	cancel = func() {
+		ocancel()
+		errCancel()
+		traceCancel()
 	}
 
 	incoming := make(chan any, c.numWorkers)
