@@ -15,9 +15,6 @@ import (
 	"github.com/lestrrat-go/httprc/v3/tracesink"
 )
 
-const ReadBufferSize = 1024 * 1024 * 10  // 10MB
-const MaxBufferSize = 1024 * 1024 * 1000 // 1GB
-
 // ResourceBase is a generic Resource type
 type ResourceBase[T any] struct {
 	u           string

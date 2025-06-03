@@ -24,17 +24,6 @@ type Client struct {
 	defaultMinInterval time.Duration
 }
 
-const DefaultWorkers = 5
-
-// DefaultMaxInterval is the default maximum interval between fetches
-const DefaultMaxInterval = 24 * time.Hour * 30
-
-// DefaultMinInterval is the default minimum interval between fetches.
-const DefaultMinInterval = 15 * time.Minute
-
-// used internally
-const oneDay = 24 * time.Hour
-
 // NewClient creates a new `httprc.Client` object.
 //
 // By default ALL urls are allowed. This may not be suitable for you if
