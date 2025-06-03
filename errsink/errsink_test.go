@@ -1,10 +1,12 @@
-package errsink
+package errsink_test
 
 import (
 	"context"
 	"errors"
 	"log/slog"
 	"testing"
+
+	"github.com/lestrrat-go/httprc/v3/errsink"
 )
 
 func TestNop(t *testing.T) {
@@ -33,8 +35,8 @@ func TestNop(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			var sink Interface = NewNop()
-			
+			sink := errsink.NewNop()
+
 			// Should not panic or do anything
 			ctx := context.Background()
 			sink.Put(ctx, tt.err)
@@ -46,10 +48,10 @@ func TestNopZeroValue(t *testing.T) {
 	t.Parallel()
 
 	// Test that zero value can be used directly
-	var sink Nop
+	var sink errsink.Nop
 	ctx := context.Background()
 	err := errors.New("test error")
-	
+
 	// Should not panic
 	sink.Put(ctx, err)
 }
@@ -103,30 +105,30 @@ func TestSlogSink(t *testing.T) {
 			t.Parallel()
 
 			logger := &mockSlogger{}
-			sink := NewSlog(logger)
-			
+			sink := errsink.NewSlog(logger)
+
 			ctx := context.Background()
 			sink.Put(ctx, tt.err)
-			
+
 			if len(logger.logs) != 1 {
 				t.Errorf("expected 1 log entry, got %d", len(logger.logs))
 				return
 			}
-			
+
 			entry := logger.logs[0]
-			
+
 			if entry.ctx != ctx {
 				t.Error("context not passed correctly")
 			}
-			
+
 			if entry.level != slog.LevelError {
 				t.Errorf("expected level %v, got %v", slog.LevelError, entry.level)
 			}
-			
+
 			if entry.msg != tt.wantMsg {
 				t.Errorf("expected message %q, got %q", tt.wantMsg, entry.msg)
 			}
-			
+
 			if len(entry.args) != tt.wantArgs {
 				t.Errorf("expected %d args, got %d", tt.wantArgs, len(entry.args))
 			}
@@ -138,17 +140,17 @@ func TestSlogSinkWithNilError(t *testing.T) {
 	t.Parallel()
 
 	logger := &mockSlogger{}
-	sink := NewSlog(logger)
-	
+	sink := errsink.NewSlog(logger)
+
 	ctx := context.Background()
-	
+
 	// This should panic because nil error cannot call Error() method
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("expected panic when putting nil error to slog sink")
 		}
 	}()
-	
+
 	sink.Put(ctx, nil)
 }
 
@@ -156,25 +158,25 @@ func TestSlogSinkMultipleErrors(t *testing.T) {
 	t.Parallel()
 
 	logger := &mockSlogger{}
-	sink := NewSlog(logger)
-	
+	sink := errsink.NewSlog(logger)
+
 	ctx := context.Background()
-	
+
 	errors := []error{
 		errors.New("first error"),
 		errors.New("second error"),
 		errors.New("third error"),
 	}
-	
+
 	for _, err := range errors {
 		sink.Put(ctx, err)
 	}
-	
+
 	if len(logger.logs) != len(errors) {
 		t.Errorf("expected %d log entries, got %d", len(errors), len(logger.logs))
 		return
 	}
-	
+
 	for i, err := range errors {
 		if logger.logs[i].msg != err.Error() {
 			t.Errorf("log entry %d: expected message %q, got %q", i, err.Error(), logger.logs[i].msg)
@@ -186,8 +188,7 @@ func TestInterface(t *testing.T) {
 	t.Parallel()
 
 	// Ensure types implement the interface
-	var _ Interface = (*Nop)(nil)
-	var _ Interface = (*slogSink)(nil)
-	var _ Interface = NewNop()
-	var _ Interface = NewSlog(&mockSlogger{})
+	var _ errsink.Interface = (*errsink.Nop)(nil)
+	var _ errsink.Interface = errsink.NewNop()
+	var _ errsink.Interface = errsink.NewSlog(&mockSlogger{})
 }
