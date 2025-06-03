@@ -284,7 +284,6 @@ func (r *ResourceBase[T]) determineNextFetchInterval(ctx context.Context, name s
 
 func (r *ResourceBase[T]) calculateNextRefreshTime(ctx context.Context, res *http.Response) time.Time {
 	traceSink := traceSinkFromContext(ctx)
-
 	now := time.Now()
 
 	// If constant interval is set, use that regardless of what the
@@ -294,43 +293,65 @@ func (r *ResourceBase[T]) calculateNextRefreshTime(ctx context.Context, res *htt
 		return now.Add(interval)
 	}
 
-	if v := res.Header.Get(`Cache-Control`); v != "" {
-		dir, err := httpcc.ParseResponse(v)
-		if err == nil {
-			maxAge, ok := dir.MaxAge()
-			if ok {
-				traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Cache-Control=max-age directive set (%d)", r.URL(), maxAge))
-				interval := r.determineNextFetchInterval(
-					ctx,
-					"max-age",
-					time.Duration(maxAge)*time.Second,
-					r.MinInterval(),
-					r.MaxInterval(),
-				)
-				return now.Add(interval)
-			}
-			// fallthrough
-		}
-		// fallthrough
+	if interval := r.extractCacheControlMaxAge(ctx, res); interval > 0 {
+		return now.Add(interval)
 	}
 
-	if v := res.Header.Get(`Expires`); v != "" {
-		expires, err := http.ParseTime(v)
-		if err == nil {
-			traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Expires header set (%s)", r.URL(), expires))
-			interval := r.determineNextFetchInterval(
-				ctx,
-				"expires",
-				time.Until(expires),
-				r.MinInterval(),
-				r.MaxInterval(),
-			)
-			return now.Add(interval)
-		}
-		// fallthrough
+	if interval := r.extractExpiresInterval(ctx, res); interval > 0 {
+		return now.Add(interval)
 	}
 
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s No cache-control/expires headers found, using minimum interval", r.URL()))
-	// Previous fallthroughs are a little redandunt, but hey, it's all good.
 	return now.Add(r.MinInterval())
+}
+
+func (r *ResourceBase[T]) extractCacheControlMaxAge(ctx context.Context, res *http.Response) time.Duration {
+	traceSink := traceSinkFromContext(ctx)
+
+	v := res.Header.Get(`Cache-Control`)
+	if v == "" {
+		return 0
+	}
+
+	dir, err := httpcc.ParseResponse(v)
+	if err != nil {
+		return 0
+	}
+
+	maxAge, ok := dir.MaxAge()
+	if !ok {
+		return 0
+	}
+
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Cache-Control=max-age directive set (%d)", r.URL(), maxAge))
+	return r.determineNextFetchInterval(
+		ctx,
+		"max-age",
+		time.Duration(maxAge)*time.Second,
+		r.MinInterval(),
+		r.MaxInterval(),
+	)
+}
+
+func (r *ResourceBase[T]) extractExpiresInterval(ctx context.Context, res *http.Response) time.Duration {
+	traceSink := traceSinkFromContext(ctx)
+
+	v := res.Header.Get(`Expires`)
+	if v == "" {
+		return 0
+	}
+
+	expires, err := http.ParseTime(v)
+	if err != nil {
+		return 0
+	}
+
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: %s Expires header set (%s)", r.URL(), expires))
+	return r.determineNextFetchInterval(
+		ctx,
+		"expires",
+		time.Until(expires),
+		r.MinInterval(),
+		r.MaxInterval(),
+	)
 }
