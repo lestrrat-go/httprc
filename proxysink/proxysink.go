@@ -17,6 +17,7 @@ type Proxy[T any] struct {
 	cond    *sync.Cond
 	pending []T
 	backend Backend[T]
+	closed  bool
 }
 
 func New[T any](b Backend[T]) *Proxy[T] {
@@ -68,7 +69,13 @@ func (p *Proxy[T]) flushloop(ctx context.Context) {
 
 		p.mu.Lock()
 		for len(p.pending) <= 0 {
-			p.cond.Wait()
+			select {
+			case <-ctx.Done():
+				p.mu.Unlock()
+				return
+			default:
+				p.cond.Wait()
+			}
 		}
 
 		// extract all pending values, and clear the shared slice
@@ -93,14 +100,29 @@ func (p *Proxy[T]) flushloop(ctx context.Context) {
 }
 
 func (p *Proxy[T]) Put(ctx context.Context, v T) {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return
+	}
+	p.mu.Unlock()
+
 	select {
 	case <-ctx.Done():
 		return
 	case p.ch <- v:
 		return
+	default:
+		// Channel might be closed or blocked
+		return
 	}
 }
 
 func (p *Proxy[T]) Close() {
-	close(p.ch)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.closed {
+		p.closed = true
+		close(p.ch)
+	}
 }

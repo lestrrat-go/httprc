@@ -108,12 +108,12 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 	// controller to cancel this context.
 	ctx, cancel := context.WithCancel(octx)
 
-	var wg sync.WaitGroup
+	var donewg sync.WaitGroup
 
 	// start proxy goroutines that will accept sink requests
 	// and forward them to the appropriate sink
-	errSink, errCancel := setupSink[error, ErrorSink, errsink.Nop](ctx, c.errSink, &wg)
-	traceSink, traceCancel := setupSink[string, TraceSink, tracesink.Nop](ctx, c.traceSink, &wg)
+	errSink, errCancel := setupSink[error, ErrorSink, errsink.Nop](ctx, c.errSink, &donewg)
+	traceSink, traceCancel := setupSink[string, TraceSink, tracesink.Nop](ctx, c.traceSink, &donewg)
 
 	// Chain the cancel functions
 	ocancel := cancel
@@ -123,10 +123,14 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 		traceCancel()
 	}
 
-	incoming := make(chan any, c.numWorkers)
-	outgoing := make(chan Resource, c.numWorkers)
-	syncoutgoing := make(chan synchronousRequest, c.numWorkers)
-	wg.Add(c.numWorkers)
+	chbuf := c.numWorkers + 1
+	incoming := make(chan any, chbuf)
+	outgoing := make(chan Resource, chbuf)
+	syncoutgoing := make(chan synchronousRequest, chbuf)
+
+	var readywg sync.WaitGroup
+	readywg.Add(c.numWorkers)
+	donewg.Add(c.numWorkers)
 	for range c.numWorkers {
 		wrk := worker{
 			incoming:  incoming,
@@ -136,7 +140,7 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 			traceSink: traceSink,
 			httpcl:    c.httpcl,
 		}
-		go wrk.Run(ctx, &wg)
+		go wrk.Run(ctx, &readywg, &donewg)
 	}
 
 	tickInterval := oneDay
@@ -155,13 +159,15 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 		defaultMinInterval: c.defaultMinInterval,
 		defaultMaxInterval: c.defaultMaxInterval,
 	}
-	wg.Add(1)
-	go ctrl.loop(ctx, &wg)
+	donewg.Add(1)
+	go ctrl.loop(ctx, &donewg)
 
 	go func(wg *sync.WaitGroup, ch chan struct{}) {
 		wg.Wait()
 		close(ch)
-	}(&wg, ctrl.shutdown)
+	}(&donewg, ctrl.shutdown)
+
+	readywg.Wait()
 
 	return ctrl, nil
 }

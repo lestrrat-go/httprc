@@ -40,3 +40,20 @@ func NewSlog(l SlogLogger) Interface {
 func (s *slogSink) Put(ctx context.Context, v error) {
 	s.logger.Log(ctx, slog.LevelError, v.Error())
 }
+
+// FuncSink is an ErrorSink that calls a function with the error.
+type FuncSink struct {
+	fn func(context.Context, error)
+}
+
+// NewFunc returns a new FuncSink that calls the provided function with errors.
+func NewFunc(fn func(context.Context, error)) Interface {
+	return &FuncSink{fn: fn}
+}
+
+// Put calls the function with the error.
+func (f *FuncSink) Put(ctx context.Context, err error) {
+	if f.fn != nil {
+		f.fn(ctx, err)
+	}
+}

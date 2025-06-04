@@ -58,6 +58,10 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 		return nil, fmt.Errorf(`httprc.NewResource: %w`, errTransformerRequired)
 	}
 
+	if s == "" {
+		return nil, fmt.Errorf(`httprc.NewResource: URL cannot be empty`)
+	}
+
 	if _, err := url.Parse(s); err != nil {
 		return nil, fmt.Errorf(`httprc.NewResource: %w`, err)
 	}
@@ -248,6 +252,7 @@ func (r *ResourceBase[T]) Sync(ctx context.Context) error {
 	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: storing new value for %q", r.u))
 	r.r.Store(v)
 	r.once.Do(func() { close(r.ready) })
+	traceSink.Put(ctx, fmt.Sprintf("httprc.Resource.Sync: stored value for %q", r.u))
 	return nil
 }
 
