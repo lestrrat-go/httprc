@@ -26,14 +26,14 @@ func TestErrorSinkIntegration(t *testing.T) {
 	var capturedErrors []error
 	var mu sync.Mutex
 
-	errorSink := errsink.NewFunc(func(ctx context.Context, err error) {
+	errorSink := errsink.NewFunc(func(_ context.Context, err error) {
 		mu.Lock()
 		defer mu.Unlock()
 		capturedErrors = append(capturedErrors, err)
 	})
 
 	// Create a server that returns errors
-	errorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	errorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Server Error", http.StatusInternalServerError)
 	}))
 	defer errorSrv.Close()
@@ -59,7 +59,7 @@ func TestErrorSinkIntegration(t *testing.T) {
 	errorCount := len(capturedErrors)
 	mu.Unlock()
 
-	require.Greater(t, errorCount, 0, "should have captured at least one error")
+	require.Positive(t, errorCount, "should have captured at least one error")
 }
 
 func TestTraceSinkIntegration(t *testing.T) {
@@ -72,13 +72,13 @@ func TestTraceSinkIntegration(t *testing.T) {
 	var capturedTraces []string
 	var mu sync.Mutex
 
-	traceSink := tracesink.NewFunc(func(ctx context.Context, msg string) {
+	traceSink := tracesink.NewFunc(func(_ context.Context, msg string) {
 		mu.Lock()
 		defer mu.Unlock()
 		capturedTraces = append(capturedTraces, msg)
 	})
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
 	defer srv.Close()
@@ -103,7 +103,7 @@ func TestTraceSinkIntegration(t *testing.T) {
 	traceCount := len(capturedTraces)
 	mu.Unlock()
 
-	require.Greater(t, traceCount, 0, "should have captured trace messages")
+	require.Positive(t, traceCount, "should have captured trace messages")
 
 	// Check for expected trace messages
 	mu.Lock()
@@ -135,7 +135,7 @@ func TestConcurrentResourceAccess(t *testing.T) {
 	defer cancel()
 
 	var requestCount int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		count := atomic.AddInt64(&requestCount, 1)
 		json.NewEncoder(w).Encode(map[string]int64{"count": count})
 	}))
@@ -150,7 +150,7 @@ func TestConcurrentResourceAccess(t *testing.T) {
 	const numResources = 5
 	resources := make([]httprc.Resource, numResources)
 
-	for i := 0; i < numResources; i++ {
+	for i := range numResources {
 		resource, err := httprc.NewResource[map[string]int64](
 			fmt.Sprintf("%s/resource-%d", srv.URL, i),
 			httprc.JSONTransformer[map[string]int64](),
@@ -166,11 +166,11 @@ func TestConcurrentResourceAccess(t *testing.T) {
 	const numOperations = 10
 
 	var wg sync.WaitGroup
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			for j := 0; j < numOperations; j++ {
+			for j := range numOperations {
 				resourceIdx := (workerID + j) % numResources
 				resource := resources[resourceIdx]
 
@@ -205,7 +205,7 @@ func TestConcurrentResourceAccess(t *testing.T) {
 		var data map[string]int64
 		err := resource.Get(&data)
 		require.NoError(t, err, "resource %d should be accessible", i)
-		require.Greater(t, data["count"], int64(0), "resource %d should have valid count", i)
+		require.Positive(t, data["count"], "resource %d should have valid count", i)
 	}
 }
 
@@ -215,7 +215,7 @@ func TestResourceLeaks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
 	defer srv.Close()
@@ -224,14 +224,14 @@ func TestResourceLeaks(t *testing.T) {
 	const cycles = 10
 	const resourcesPerCycle = 20
 
-	for cycle := 0; cycle < cycles; cycle++ {
+	for cycle := range cycles {
 		cl := httprc.NewClient()
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
 
 		// Add many resources
 		urls := make([]string, resourcesPerCycle)
-		for i := 0; i < resourcesPerCycle; i++ {
+		for i := range resourcesPerCycle {
 			testURL := fmt.Sprintf("%s/leak-test-%d-%d", srv.URL, cycle, i)
 			urls[i] = testURL
 
@@ -245,7 +245,7 @@ func TestResourceLeaks(t *testing.T) {
 		}
 
 		// Remove half of them
-		for i := 0; i < resourcesPerCycle/2; i++ {
+		for i := range resourcesPerCycle / 2 {
 			require.NoError(t, ctrl.Remove(ctx, urls[i]), "removing leak test resource for cycle %d resource %d should succeed", cycle, i)
 		}
 
@@ -258,14 +258,15 @@ func TestWhitelistIntegration(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	t.Run("insecure whitelist allows all", func(t *testing.T) {
+		t.Parallel()
 		cl := httprc.NewClient(httprc.WithWhitelist(httprc.NewInsecureWhitelist()))
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)

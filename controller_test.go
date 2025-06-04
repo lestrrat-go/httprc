@@ -18,19 +18,20 @@ func TestControllerAdd(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("add new resource", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[map[string]string](
 			srv.URL+"/test1",
 			httprc.JSONTransformer[map[string]string](),
@@ -46,6 +47,7 @@ func TestControllerAdd(t *testing.T) {
 	})
 
 	t.Run("add duplicate resource should fail", func(t *testing.T) {
+		t.Parallel()
 		resource1, err := httprc.NewResource[map[string]string](
 			srv.URL+"/test2",
 			httprc.JSONTransformer[map[string]string](),
@@ -67,6 +69,7 @@ func TestControllerAdd(t *testing.T) {
 	})
 
 	t.Run("add with canceled context", func(t *testing.T) {
+		t.Parallel()
 		canceledCtx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
@@ -86,19 +89,20 @@ func TestControllerLookup(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"path": r.URL.Path})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("lookup existing resource", func(t *testing.T) {
+		t.Parallel()
 		testURL := srv.URL + "/lookup-test"
 		resource, err := httprc.NewResource[map[string]string](
 			testURL,
@@ -114,12 +118,14 @@ func TestControllerLookup(t *testing.T) {
 	})
 
 	t.Run("lookup non-existent resource", func(t *testing.T) {
+		t.Parallel()
 		nonExistentURL := srv.URL + "/does-not-exist"
 		_, err := ctrl.Lookup(ctx, nonExistentURL)
 		require.Error(t, err)
 	})
 
 	t.Run("lookup with canceled context", func(t *testing.T) {
+		t.Parallel()
 		canceledCtx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
@@ -133,19 +139,20 @@ func TestControllerRemove(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("remove existing resource", func(t *testing.T) {
+		t.Parallel()
 		testURL := srv.URL + "/remove-test"
 		resource, err := httprc.NewResource[map[string]string](
 			testURL,
@@ -169,12 +176,14 @@ func TestControllerRemove(t *testing.T) {
 	})
 
 	t.Run("remove non-existent resource", func(t *testing.T) {
+		t.Parallel()
 		nonExistentURL := srv.URL + "/does-not-exist"
 		err := ctrl.Remove(ctx, nonExistentURL)
 		require.Error(t, err)
 	})
 
 	t.Run("remove with canceled context", func(t *testing.T) {
+		t.Parallel()
 		canceledCtx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
@@ -190,7 +199,7 @@ func TestControllerRefresh(t *testing.T) {
 	var requestCount int
 	var mu sync.Mutex
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		requestCount++
 		count := requestCount
@@ -198,17 +207,18 @@ func TestControllerRefresh(t *testing.T) {
 
 		json.NewEncoder(w).Encode(map[string]int{"count": count})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("refresh existing resource", func(t *testing.T) {
+		t.Parallel()
 		testURL := srv.URL + "/refresh-test"
 		resource, err := httprc.NewResource[map[string]int](
 			testURL,
@@ -236,12 +246,14 @@ func TestControllerRefresh(t *testing.T) {
 	})
 
 	t.Run("refresh non-existent resource", func(t *testing.T) {
+		t.Parallel()
 		nonExistentURL := srv.URL + "/does-not-exist"
 		err := ctrl.Refresh(ctx, nonExistentURL)
 		require.Error(t, err)
 	})
 
 	t.Run("refresh with canceled context", func(t *testing.T) {
+		t.Parallel()
 		canceledCtx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
@@ -255,14 +267,15 @@ func TestControllerShutdown(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	t.Run("shutdown with timeout", func(t *testing.T) {
+		t.Parallel()
 		cl := httprc.NewClient()
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
@@ -280,6 +293,7 @@ func TestControllerShutdown(t *testing.T) {
 	})
 
 	t.Run("shutdown with context", func(t *testing.T) {
+		t.Parallel()
 		cl := httprc.NewClient()
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
@@ -299,6 +313,7 @@ func TestControllerShutdown(t *testing.T) {
 	})
 
 	t.Run("shutdown with canceled context", func(t *testing.T) {
+		t.Parallel()
 		cl := httprc.NewClient()
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
@@ -338,11 +353,11 @@ func TestControllerConcurrentOperations(t *testing.T) {
 	var addedURLs sync.Map
 
 	// Concurrent adds
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < numOperationsPerGoroutine; j++ {
+			for j := range numOperationsPerGoroutine {
 				testURL := fmt.Sprintf("%s/concurrent-test-%d-%d", srv.URL, i, j)
 				resource, err := httprc.NewResource[map[string]string](
 					testURL,
@@ -367,7 +382,7 @@ func TestControllerConcurrentOperations(t *testing.T) {
 	wg.Wait()
 
 	// Verify all resources can be looked up
-	addedURLs.Range(func(key, value interface{}) bool {
+	addedURLs.Range(func(key, _ interface{}) bool {
 		testURL := key.(string)
 		_, err := ctrl.Lookup(ctx, testURL)
 		require.NoError(t, err, "should be able to lookup %s", testURL)
@@ -376,11 +391,11 @@ func TestControllerConcurrentOperations(t *testing.T) {
 
 	// Concurrent lookups and refreshes
 	wg = sync.WaitGroup{}
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < numOperationsPerGoroutine; j++ {
+			for j := range numOperationsPerGoroutine {
 				testURL := fmt.Sprintf("%s/concurrent-test-%d-%d", srv.URL, i, j)
 
 				// Lookup

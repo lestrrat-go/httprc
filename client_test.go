@@ -3,9 +3,9 @@ package httprc_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -20,11 +20,13 @@ func TestNewClient(t *testing.T) {
 	t.Parallel()
 
 	t.Run("default client", func(t *testing.T) {
+		t.Parallel()
 		cl := httprc.NewClient()
 		require.NotNil(t, cl)
 	})
 
 	t.Run("with custom options", func(t *testing.T) {
+		t.Parallel()
 		// Test with custom worker count
 		cl := httprc.NewClient(httprc.WithWorkers(10))
 		require.NotNil(t, cl)
@@ -64,6 +66,7 @@ func TestClientStart(t *testing.T) {
 	t.Parallel()
 
 	t.Run("successful start", func(t *testing.T) {
+		t.Parallel()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -75,6 +78,7 @@ func TestClientStart(t *testing.T) {
 	})
 
 	t.Run("start twice should fail", func(t *testing.T) {
+		t.Parallel()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -116,7 +120,7 @@ func TestClientConcurrentStart(t *testing.T) {
 	var successCount, errorCount int
 	var successCtrl httprc.Controller
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -159,13 +163,13 @@ func TestClientWithCustomSinks(t *testing.T) {
 	var traceMessages []string
 	var mu sync.Mutex
 
-	errorSink := errsink.NewFunc(func(ctx context.Context, err error) {
+	errorSink := errsink.NewFunc(func(_ context.Context, err error) {
 		mu.Lock()
 		defer mu.Unlock()
 		errorMessages = append(errorMessages, err.Error())
 	})
 
-	traceSink := tracesink.NewFunc(func(ctx context.Context, msg string) {
+	traceSink := tracesink.NewFunc(func(_ context.Context, msg string) {
 		mu.Lock()
 		defer mu.Unlock()
 		traceMessages = append(traceMessages, msg)
@@ -181,7 +185,7 @@ func TestClientWithCustomSinks(t *testing.T) {
 	defer ctrl.Shutdown(time.Second)
 
 	// Add a resource to generate some trace messages
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"test": "data"})
 	}))
 	defer srv.Close()
@@ -201,7 +205,7 @@ func TestClientWithCustomSinks(t *testing.T) {
 	defer mu.Unlock()
 
 	// Should have some trace messages
-	require.Greater(t, len(traceMessages), 0, "should have received trace messages")
+	require.NotEmpty(t, traceMessages, "should have received trace messages")
 
 	// Error messages might be empty if no errors occurred, which is fine
 	// but we test that the sink was properly set up
@@ -214,17 +218,17 @@ func TestClientMultipleResources(t *testing.T) {
 	defer cancel()
 
 	// Create multiple test servers
-	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"server": "1"})
 	}))
 	defer srv1.Close()
 
-	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"server": "2"})
 	}))
 	defer srv2.Close()
 
-	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"server": "3"})
 	}))
 	defer srv3.Close()
@@ -255,6 +259,6 @@ func TestClientMultipleResources(t *testing.T) {
 
 		var data map[string]string
 		require.NoError(t, resource.Get(&data), "getting data from resource %d", i)
-		require.Equal(t, fmt.Sprintf("%d", i+1), data["server"], "resource %d should return correct server ID", i)
+		require.Equal(t, strconv.Itoa(i+1), data["server"], "resource %d should return correct server ID", i)
 	}
 }

@@ -15,7 +15,7 @@ type mockBackend[T any] struct {
 	puts []T
 }
 
-func (m *mockBackend[T]) Put(ctx context.Context, v T) {
+func (m *mockBackend[T]) Put(_ context.Context, v T) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.puts = append(m.puts, v)
@@ -102,7 +102,7 @@ func TestProxyMultipleValues(t *testing.T) {
 
 	// Put many values rapidly
 	const numValues = 100
-	for i := 0; i < numValues; i++ {
+	for i := range numValues {
 		proxy.Put(ctx, i)
 	}
 
@@ -116,7 +116,7 @@ func TestProxyMultipleValues(t *testing.T) {
 	}
 
 	// Values should be in order
-	for i := 0; i < numValues; i++ {
+	for i := range numValues {
 		if puts[i] != i {
 			t.Errorf("put %d: expected %d, got %d", i, i, puts[i])
 		}
@@ -349,7 +349,7 @@ func TestProxyLargeBatch(t *testing.T) {
 
 	// Put a large number of values to test pending slice reallocation
 	const numValues = 50
-	for i := 0; i < numValues; i++ {
+	for i := range numValues {
 		proxy.Put(ctx, fmt.Sprintf("value_%d", i))
 	}
 
@@ -363,7 +363,7 @@ func TestProxyLargeBatch(t *testing.T) {
 	}
 
 	// Check all values are present and in order
-	for i := 0; i < numValues; i++ {
+	for i := range numValues {
 		expected := fmt.Sprintf("value_%d", i)
 		if puts[i] != expected {
 			t.Errorf("put %d: expected %q, got %q", i, expected, puts[i])
@@ -447,7 +447,7 @@ func TestProxyFlushLoopWithPendingOnCancel(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Put multiple values rapidly to build up pending queue
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		proxy.Put(ctx, fmt.Sprintf("pending_%d", i))
 	}
 
@@ -486,7 +486,7 @@ func TestProxyLargePendingSliceReallocation(t *testing.T) {
 	const numValues = 25
 
 	// Add all values very rapidly to increase chance of large pending queue
-	for i := 0; i < numValues; i++ {
+	for i := range numValues {
 		proxy.Put(ctx, fmt.Sprintf("realloc_%d", i))
 		// Very short sleep to allow some batching
 		if i%5 == 0 {
@@ -504,7 +504,7 @@ func TestProxyLargePendingSliceReallocation(t *testing.T) {
 	}
 
 	// Check all values are present
-	for i := 0; i < numValues; i++ {
+	for i := range numValues {
 		expected := fmt.Sprintf("realloc_%d", i)
 		found := false
 		for _, put := range puts {

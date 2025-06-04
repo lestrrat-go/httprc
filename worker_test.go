@@ -22,13 +22,13 @@ func TestWorkerPoolBehavior(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	var requestCount int64
 	var mu sync.Mutex
 	var requestTimes []time.Time
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		requestTimes = append(requestTimes, time.Now())
 		requestCount++
@@ -39,9 +39,10 @@ func TestWorkerPoolBehavior(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		json.NewEncoder(w).Encode(map[string]int64{"count": count})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	t.Run("worker pool processes requests concurrently", func(t *testing.T) {
+		t.Parallel()
 		const numWorkers = 5
 		traceDst := io.Discard
 		if testing.Verbose() {
@@ -58,7 +59,7 @@ func TestWorkerPoolBehavior(t *testing.T) {
 
 		// Add multiple resources that will be fetched simultaneously
 		const numResources = numWorkers * 2
-		for i := 0; i < numResources; i++ {
+		for i := range numResources {
 			resource, err := httprc.NewResource[map[string]int64](
 				fmt.Sprintf("%s/worker-test-%d", srv.URL, i),
 				httprc.JSONTransformer[map[string]int64](),
@@ -69,7 +70,7 @@ func TestWorkerPoolBehavior(t *testing.T) {
 
 		// Force refresh all resources simultaneously
 		var wg sync.WaitGroup
-		for i := 0; i < numResources; i++ {
+		for i := range numResources {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
@@ -78,7 +79,9 @@ func TestWorkerPoolBehavior(t *testing.T) {
 				tctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				defer cancel()
 
-				require.NoError(t, ctrl.Refresh(tctx, url), "worker: should refresh resource %d", i)
+				if err := ctrl.Refresh(tctx, url); err != nil {
+					t.Errorf("worker: should refresh resource %d: %v", i, err)
+				}
 			}(i)
 		}
 		wg.Wait()
@@ -90,6 +93,7 @@ func TestWorkerPoolBehavior(t *testing.T) {
 	})
 
 	t.Run("single worker processes requests sequentially", func(t *testing.T) {
+		t.Parallel()
 		// Reset counters
 		mu.Lock()
 		requestCount = 0
@@ -104,7 +108,7 @@ func TestWorkerPoolBehavior(t *testing.T) {
 
 		// Add multiple resources
 		const numResources = 3
-		for i := 0; i < numResources; i++ {
+		for i := range numResources {
 			resource, err := httprc.NewResource[map[string]int64](
 				fmt.Sprintf("%s/sequential-test-%d", srv.URL, i),
 				httprc.JSONTransformer[map[string]int64](),
@@ -116,7 +120,7 @@ func TestWorkerPoolBehavior(t *testing.T) {
 
 		// Force refresh all resources
 		var wg sync.WaitGroup
-		for i := 0; i < numResources; i++ {
+		for i := range numResources {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
@@ -125,7 +129,9 @@ func TestWorkerPoolBehavior(t *testing.T) {
 				tctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				defer cancel()
 
-				require.NoError(t, ctrl.Refresh(tctx, url), "sequential: should refresh resource %d", i)
+				if err := ctrl.Refresh(tctx, url); err != nil {
+					t.Errorf("sequential: should refresh resource %d: %v", i, err)
+				}
 			}(i)
 		}
 		wg.Wait()
@@ -136,11 +142,11 @@ func TestPeriodicRefresh(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	var requestCount int64
 	var mu sync.Mutex
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		requestCount++
 		count := requestCount
@@ -150,7 +156,7 @@ func TestPeriodicRefresh(t *testing.T) {
 		w.Header().Set("Cache-Control", "max-age=1") // Short cache for testing
 		json.NewEncoder(w).Encode(map[string]int64{"count": count})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	traceDst := io.Discard
 	if testing.Verbose() {
@@ -162,9 +168,10 @@ func TestPeriodicRefresh(t *testing.T) {
 	)
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("resource refreshes automatically", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[map[string]int64](
 			srv.URL+"/periodic-test",
 			httprc.JSONTransformer[map[string]int64](),
@@ -241,10 +248,11 @@ func TestEdgeCases(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	t.Run("empty response body", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			// Return empty body
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -269,10 +277,11 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("very large response", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			// Generate a large response
 			data := make(map[string]string)
-			for i := 0; i < 10000; i++ {
+			for i := range 10000 {
 				data[fmt.Sprintf("key_%d", i)] = fmt.Sprintf("value_%d_with_lots_of_data_to_make_it_large", i)
 			}
 			json.NewEncoder(w).Encode(data)
@@ -298,7 +307,7 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("rapid add and remove", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		}))
 		defer srv.Close()
@@ -309,7 +318,7 @@ func TestEdgeCases(t *testing.T) {
 		defer ctrl.Shutdown(time.Second)
 
 		// Rapidly add and remove resources
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			testURL := fmt.Sprintf("%s/rapid-test-%d", srv.URL, i)
 
 			resource, err := httprc.NewResource[map[string]string](
@@ -326,7 +335,7 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("invalid JSON with fallback", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte("invalid json {"))
 		}))
@@ -356,12 +365,12 @@ func TestResourceLifecycle(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	var requestPhases []string
 	var mu sync.Mutex
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		requestPhases = append(requestPhases, "request_received")
 		mu.Unlock()
@@ -373,14 +382,15 @@ func TestResourceLifecycle(t *testing.T) {
 		requestPhases = append(requestPhases, "response_sent")
 		mu.Unlock()
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("full lifecycle", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[map[string]string](
 			srv.URL+"/lifecycle-test",
 			httprc.JSONTransformer[map[string]string](),
@@ -418,6 +428,6 @@ func TestResourceLifecycle(t *testing.T) {
 		copy(phases, requestPhases)
 		mu.Unlock()
 
-		require.Greater(t, len(phases), 0, "should have recorded request phases")
+		require.NotEmpty(t, phases, "should have recorded request phases")
 	})
 }

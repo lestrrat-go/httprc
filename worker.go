@@ -51,10 +51,10 @@ func (w worker) Run(ctx context.Context, readywg *sync.WaitGroup, donewg *sync.W
 }
 
 func (w worker) sendAdjustIntervalRequest(ctx context.Context, r Resource) {
-	w.traceSink.Put(ctx, fmt.Sprintf("httprc worker: Sending interval adjustment request for %s", r.URL()))
+	w.traceSink.Put(ctx, "httprc worker: Sending interval adjustment request for "+r.URL())
 	select {
 	case <-ctx.Done():
 	case w.incoming <- adjustIntervalRequest{resource: r}:
 	}
-	w.traceSink.Put(ctx, fmt.Sprintf("httprc worker: Sent interval adjustment request for %s", r.URL()))
+	w.traceSink.Put(ctx, "httprc worker: Sent interval adjustment request for "+r.URL())
 }

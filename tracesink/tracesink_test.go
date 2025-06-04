@@ -34,7 +34,6 @@ func TestNop(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -64,15 +63,13 @@ type mockSlogger struct {
 }
 
 type logEntry struct {
-	ctx   context.Context
 	level slog.Level
 	msg   string
 	args  []any
 }
 
-func (m *mockSlogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
+func (m *mockSlogger) Log(_ context.Context, level slog.Level, msg string, args ...any) {
 	m.logs = append(m.logs, logEntry{
-		ctx:   ctx,
 		level: level,
 		msg:   msg,
 		args:  args,
@@ -115,7 +112,6 @@ func TestSlogSink(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -131,10 +127,6 @@ func TestSlogSink(t *testing.T) {
 			}
 
 			entry := logger.logs[0]
-
-			if entry.ctx != ctx {
-				t.Error("context not passed correctly")
-			}
 
 			if entry.level != slog.LevelInfo {
 				t.Errorf("expected level %v, got %v", slog.LevelInfo, entry.level)

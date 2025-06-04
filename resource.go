@@ -59,7 +59,7 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 	}
 
 	if s == "" {
-		return nil, fmt.Errorf(`httprc.NewResource: URL cannot be empty`)
+		return nil, fmt.Errorf(`httprc.NewResource: %w`, errURLCannotBeEmpty)
 	}
 
 	if _, err := url.Parse(s); err != nil {

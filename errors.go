@@ -26,6 +26,12 @@ func ErrTransformerRequired() error {
 	return errTransformerRequired
 }
 
+var errURLCannotBeEmpty = errors.New(`URL cannot be empty`)
+
+func ErrURLCannotBeEmpty() error {
+	return errURLCannotBeEmpty
+}
+
 var errUnexpectedStatusCode = errors.New(`unexpected status code`)
 
 func ErrUnexpectedStatusCode() error {

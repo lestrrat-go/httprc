@@ -18,6 +18,7 @@ func TestResourceCreation(t *testing.T) {
 	t.Parallel()
 
 	t.Run("valid resource creation", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[map[string]string](
 			"https://example.com/test",
 			httprc.JSONTransformer[map[string]string](),
@@ -30,6 +31,7 @@ func TestResourceCreation(t *testing.T) {
 	})
 
 	t.Run("resource with custom intervals", func(t *testing.T) {
+		t.Parallel()
 		minInterval := 30 * time.Second
 		maxInterval := 2 * time.Hour
 
@@ -45,6 +47,7 @@ func TestResourceCreation(t *testing.T) {
 	})
 
 	t.Run("resource with invalid URL", func(t *testing.T) {
+		t.Parallel()
 		// Test with malformed URLs
 		invalidURLs := []string{
 			"",
@@ -90,10 +93,10 @@ func TestResourceTransformers(t *testing.T) {
 			w.Write([]byte("invalid json {"))
 		}
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
@@ -101,6 +104,7 @@ func TestResourceTransformers(t *testing.T) {
 	defer ctrl.Shutdown(time.Second)
 
 	t.Run("JSON transformer", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[map[string]interface{}](
 			srv.URL+"/json",
 			httprc.JSONTransformer[map[string]interface{}](),
@@ -112,11 +116,12 @@ func TestResourceTransformers(t *testing.T) {
 		var data map[string]interface{}
 		require.NoError(t, resource.Get(&data), "getting JSON data should succeed")
 		require.Equal(t, "test", data["string"])
-		require.Equal(t, float64(42), data["number"]) // JSON numbers are float64
+		require.InEpsilon(t, 42.0, data["number"], 1e-9) // JSON numbers are float64
 		require.Equal(t, true, data["bool"])
 	})
 
 	t.Run("bytes transformer", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[[]byte](
 			srv.URL+"/bytes",
 			httprc.BytesTransformer(),
@@ -131,7 +136,8 @@ func TestResourceTransformers(t *testing.T) {
 	})
 
 	t.Run("custom transformer", func(t *testing.T) {
-		customTransformer := httprc.TransformFunc[string](func(ctx context.Context, res *http.Response) (string, error) {
+		t.Parallel()
+		customTransformer := httprc.TransformFunc[string](func(_ context.Context, res *http.Response) (string, error) {
 			defer res.Body.Close()
 			buf := make([]byte, 1024)
 			n, _ := res.Body.Read(buf)
@@ -152,6 +158,7 @@ func TestResourceTransformers(t *testing.T) {
 	})
 
 	t.Run("transformer error handling", func(t *testing.T) {
+		t.Parallel()
 		// JSON transformer should fail on invalid JSON
 		resource, err := httprc.NewResource[map[string]interface{}](
 			srv.URL+"/invalid-json",
@@ -173,14 +180,15 @@ func TestResourceErrorHandling(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, "error handling test client start should succeed")
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("HTTP error responses", func(t *testing.T) {
+		t.Parallel()
 		errorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/404":
@@ -238,7 +246,7 @@ func TestResourceErrorHandling(t *testing.T) {
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
-		slowSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slowSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(2 * time.Second) // Slow response
 			w.Write([]byte("slow response"))
 		}))
@@ -266,7 +274,7 @@ func TestResourceCacheHeaders(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	var requestCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -286,14 +294,15 @@ func TestResourceCacheHeaders(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]int{"count": requestCount})
 		}
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, "cache headers test client start should succeed")
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("respect cache-control max-age", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[map[string]int](
 			srv.URL+"/cache-control",
 			httprc.JSONTransformer[map[string]int](),
@@ -319,19 +328,20 @@ func TestResourceReady(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	cl := httprc.NewClient()
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, "ready test client start should succeed")
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("resource becomes ready", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[map[string]string](
 			srv.URL+"/ready-test",
 			httprc.JSONTransformer[map[string]string](),
@@ -350,7 +360,8 @@ func TestResourceReady(t *testing.T) {
 	})
 
 	t.Run("ready with timeout", func(t *testing.T) {
-		slowSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Parallel()
+		slowSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(2 * time.Second)
 			json.NewEncoder(w).Encode(map[string]string{"status": "slow"})
 		}))
@@ -370,7 +381,7 @@ func TestResourceReady(t *testing.T) {
 
 		err = resource.Ready(readyCtx)
 		require.Error(t, err)
-		require.True(t, errors.Is(err, context.DeadlineExceeded))
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 }
 
@@ -378,6 +389,7 @@ func TestResourceIntervals(t *testing.T) {
 	t.Parallel()
 
 	t.Run("set and get intervals", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[[]byte](
 			"https://example.com/test",
 			httprc.BytesTransformer(),
@@ -399,6 +411,7 @@ func TestResourceIntervals(t *testing.T) {
 	})
 
 	t.Run("busy state", func(t *testing.T) {
+		t.Parallel()
 		resource, err := httprc.NewResource[[]byte](
 			"https://example.com/test",
 			httprc.BytesTransformer(),

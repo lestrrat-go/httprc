@@ -26,7 +26,11 @@ func setupSink[T any, S proxysink.Backend[T], NopType any](ctx context.Context, 
 	}(ctx, wg, proxy)
 
 	// proxy can be converted to one of the sink subtypes
-	return any(proxy).(S), proxy.Close
+	s, ok := any(proxy).(S)
+	if !ok {
+		panic("type assertion failed: proxy cannot be converted to type S")
+	}
+	return s, proxy.Close
 }
 
 // Client is the main entry point for the httprc package.
