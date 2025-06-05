@@ -28,6 +28,7 @@ func New[T any](b Backend[T]) *Proxy[T] {
 		mu:      mu,
 		cond:    sync.NewCond(mu),
 		backend: b,
+		cancel:  func() {},
 	}
 }
 
