@@ -135,7 +135,7 @@ type identWaitReady struct{}
 // By default, the client will wait for the resource to be ready before returning.
 // If you specify this option with a value of false, the client will not wait for
 // the resource to be fully registered, which is usually not what you want.
-// This option exists to accomodate for cases where you for some reason want to
+// This option exists to accommodate for cases where you for some reason want to
 // add a resource to the controller, but want to do something else before
 // you wait for it. Make sure to call `r.Ready()` later on to ensure that
 // the resource is ready before you try to access it.
