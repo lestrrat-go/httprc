@@ -42,3 +42,11 @@ func NewSlog(l SlogLogger) Interface {
 func (s *slogSink) Put(ctx context.Context, v string) {
 	s.logger.Log(ctx, s.level, v)
 }
+
+// Func is a TraceSink that calls a function with the trace message.
+type Func func(context.Context, string)
+
+// Put calls the function with the trace message.
+func (f Func) Put(ctx context.Context, msg string) {
+	f(ctx, msg)
+}
