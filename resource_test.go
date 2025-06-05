@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/httprc/v3"
+	"github.com/lestrrat-go/httprc/v3/tracesink"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,10 +101,16 @@ func TestResourceTransformers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	cl := httprc.NewClient()
+	traceDst := io.Discard
+	if testing.Verbose() {
+		traceDst = io.Discard
+	}
+	cl := httprc.NewClient(
+		httprc.WithTraceSink(tracesink.NewSlog(slog.New(slog.NewJSONHandler(traceDst, nil)))),
+	)
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, "client start should succeed")
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	t.Run("JSON transformer", func(t *testing.T) {
 		t.Parallel()

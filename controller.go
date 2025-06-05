@@ -28,24 +28,11 @@ type Controller interface {
 }
 
 type controller struct {
-	cancel context.CancelFunc
-	check  *time.Ticker
-	// incoming accepts new control requests from external sources
-	incoming chan any
-	// outgoing sends Syncer objects to the worker pool
-	outgoing chan Resource
-
+	cancel    context.CancelFunc
+	incoming  chan any // incoming requests to the controller
+	shutdown  chan struct{}
 	traceSink TraceSink
-
-	syncoutgoing chan synchronousRequest
-	items        map[string]Resource
-	tickInterval time.Duration
-	shutdown     chan struct{}
-
-	wl Whitelist
-
-	defaultMaxInterval time.Duration
-	defaultMinInterval time.Duration
+	wl        Whitelist
 }
 
 // Shutdown is a convenience function that calls ShutdownContext with a
@@ -133,6 +120,8 @@ func (c *controller) Lookup(ctx context.Context, u string) (Resource, error) {
 // timeout unless you configure your context object with `context.WithTimeout`.
 // To disable waiting, you can specify the `WithWaitReady(false)` option.
 func (c *controller) Add(ctx context.Context, r Resource, options ...AddOption) error {
+	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: START Add(%q)", r.URL()))
+	defer c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: END   Add(%q)", r.URL()))
 	waitReady := true
 	//nolint:forcetypeassert
 	for _, option := range options {
@@ -151,11 +140,13 @@ func (c *controller) Add(ctx context.Context, r Resource, options ...AddOption) 
 		reply:    reply,
 		resource: r,
 	}
+	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: sending add request for %q to backend", r.URL()))
 	if _, err := sendBackend[addRequest, struct{}](ctx, c.incoming, req, reply); err != nil {
 		return err
 	}
 
 	if waitReady {
+		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: waiting for resource %q to be ready", r.URL()))
 		if err := r.Ready(ctx); err != nil {
 			return err
 		}

@@ -16,14 +16,14 @@ type worker struct {
 }
 
 func (w worker) Run(ctx context.Context, readywg *sync.WaitGroup, donewg *sync.WaitGroup) {
-	w.traceSink.Put(ctx, "httprc worker: starting worker loop")
+	w.traceSink.Put(ctx, "httprc worker: START worker loop")
+	defer w.traceSink.Put(ctx, "httprc worker: END   worker loop")
 	defer donewg.Done()
 	ctx = withTraceSink(ctx, w.traceSink)
 	ctx = withHTTPClient(ctx, w.httpcl)
 
 	readywg.Done()
 	for {
-		w.traceSink.Put(ctx, "httprc worker: worker loop")
 		select {
 		case <-ctx.Done():
 			w.traceSink.Put(ctx, "httprc worker: stopping worker loop")

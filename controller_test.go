@@ -344,7 +344,7 @@ func TestControllerConcurrentOperations(t *testing.T) {
 	cl := httprc.NewClient(httprc.WithWorkers(5))
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	const numGoroutines = 10
 	const numOperationsPerGoroutine = 5

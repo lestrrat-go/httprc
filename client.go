@@ -149,7 +149,14 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 
 	tickInterval := oneDay
 	ctrl := &controller{
-		cancel:       cancel,
+		cancel:    cancel,
+		incoming:  incoming,
+		shutdown:  make(chan struct{}),
+		traceSink: traceSink,
+		wl:        c.wl,
+	}
+
+	backend := &ctrlBackend{
 		items:        make(map[string]Resource),
 		outgoing:     outgoing,
 		syncoutgoing: syncoutgoing,
@@ -157,14 +164,13 @@ func (c *Client) Start(octx context.Context) (Controller, error) {
 		traceSink:    traceSink,
 		tickInterval: tickInterval,
 		check:        time.NewTicker(tickInterval),
-		shutdown:     make(chan struct{}),
-		wl:           c.wl,
 
 		defaultMinInterval: c.defaultMinInterval,
 		defaultMaxInterval: c.defaultMaxInterval,
 	}
 	donewg.Add(1)
-	go ctrl.loop(ctx, &donewg)
+	readywg.Add(1)
+	go backend.loop(ctx, &readywg, &donewg)
 
 	go func(wg *sync.WaitGroup, ch chan struct{}) {
 		wg.Wait()

@@ -55,7 +55,7 @@ func TestWorkerPoolBehavior(t *testing.T) {
 		)
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
-		defer ctrl.Shutdown(time.Second)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 		// Add multiple resources that will be fetched simultaneously
 		const numResources = numWorkers * 2
@@ -65,7 +65,7 @@ func TestWorkerPoolBehavior(t *testing.T) {
 				httprc.JSONTransformer[map[string]int64](),
 			)
 			require.NoError(t, err, "worker stress test resource %d creation should succeed", i)
-			require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)), "adding worker stress test resource %d should succeed", i)
+			require.NoError(t, ctrl.Add(ctx, resource), "adding worker stress test resource %d should succeed", i)
 		}
 
 		// Force refresh all resources simultaneously
@@ -100,11 +100,18 @@ func TestWorkerPoolBehavior(t *testing.T) {
 		requestTimes = requestTimes[:0]
 		mu.Unlock()
 
+		traceDst := io.Discard
+		if testing.Verbose() {
+			traceDst = os.Stderr
+		}
 		const numWorkers = 1
-		cl := httprc.NewClient(httprc.WithWorkers(numWorkers))
+		cl := httprc.NewClient(
+			httprc.WithTraceSink(tracesink.NewSlog(slog.New(slog.NewJSONHandler(traceDst, nil)))),
+			httprc.WithWorkers(numWorkers),
+		)
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
-		defer ctrl.Shutdown(time.Second)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 		// Add multiple resources
 		const numResources = 3
@@ -115,7 +122,7 @@ func TestWorkerPoolBehavior(t *testing.T) {
 			)
 			require.NoError(t, err, "sequential processing test resource %d creation should succeed", i)
 
-			require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)), "adding sequential processing test resource %d should succeed", i)
+			require.NoError(t, ctrl.Add(ctx, resource), "adding sequential processing test resource %d should succeed", i)
 		}
 
 		// Force refresh all resources
@@ -261,7 +268,7 @@ func TestEdgeCases(t *testing.T) {
 		cl := httprc.NewClient()
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
-		defer ctrl.Shutdown(time.Second)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 		resource, err := httprc.NewResource[[]byte](
 			srv.URL,
@@ -291,7 +298,7 @@ func TestEdgeCases(t *testing.T) {
 		cl := httprc.NewClient()
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
-		defer ctrl.Shutdown(time.Second)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 		resource, err := httprc.NewResource[map[string]string](
 			srv.URL,
@@ -315,7 +322,7 @@ func TestEdgeCases(t *testing.T) {
 		cl := httprc.NewClient()
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
-		defer ctrl.Shutdown(time.Second)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 		// Rapidly add and remove resources
 		for i := range 100 {
@@ -327,7 +334,7 @@ func TestEdgeCases(t *testing.T) {
 			)
 			require.NoError(t, err, "rapid add/remove test resource %d creation should succeed", i)
 
-			require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)), "adding rapid add/remove test resource %d should succeed", i)
+			require.NoError(t, ctrl.Add(ctx, resource), "adding rapid add/remove test resource %d should succeed", i)
 
 			// Immediately remove it
 			require.NoError(t, ctrl.Remove(ctx, testURL), "removing rapid add/remove test resource %d should succeed", i)
@@ -344,7 +351,7 @@ func TestEdgeCases(t *testing.T) {
 		cl := httprc.NewClient()
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
-		defer ctrl.Shutdown(time.Second)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 		// Use bytes transformer instead of JSON for invalid JSON
 		resource, err := httprc.NewResource[[]byte](

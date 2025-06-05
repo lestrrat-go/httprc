@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (c *controller) adjustInterval(ctx context.Context, req adjustIntervalRequest) {
+func (c *ctrlBackend) adjustInterval(ctx context.Context, req adjustIntervalRequest) {
 	interval := roundupToSeconds(time.Until(req.resource.Next()))
 	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: got adjust request (current tick interval=%s, next for %q=%s)", c.tickInterval, req.resource.URL(), interval))
 
@@ -24,7 +24,7 @@ func (c *controller) adjustInterval(ctx context.Context, req adjustIntervalReque
 	}
 }
 
-func (c *controller) addResource(ctx context.Context, req addRequest) {
+func (c *ctrlBackend) addResource(ctx context.Context, req addRequest) {
 	r := req.resource
 	if _, ok := c.items[r.URL()]; ok {
 		// Already exists
@@ -47,7 +47,7 @@ func (c *controller) addResource(ctx context.Context, req addRequest) {
 	c.SetTickInterval(time.Nanosecond)
 }
 
-func (c *controller) rmResource(ctx context.Context, req rmRequest) {
+func (c *ctrlBackend) rmResource(ctx context.Context, req rmRequest) {
 	u := req.u
 	if _, ok := c.items[u]; !ok {
 		sendReply(ctx, req.reply, struct{}{}, errResourceNotFound)
@@ -67,24 +67,33 @@ func (c *controller) rmResource(ctx context.Context, req rmRequest) {
 	c.check.Reset(minInterval)
 }
 
-func (c *controller) refreshResource(ctx context.Context, req refreshRequest) {
-	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: got refresh request for %q", req.u))
+func (c *ctrlBackend) refreshResource(ctx context.Context, req refreshRequest) {
+	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: [refresh] START %q", req.u))
+	defer c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: [refresh] END   %q", req.u))
 	u := req.u
 	r, ok := c.items[u]
 	if !ok {
-		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: resource %s is not registered", req.u))
+		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: [refresh] %s is not registered", req.u))
 		sendReply(ctx, req.reply, struct{}{}, errResourceNotFound)
 		return
 	}
+
+	// Make sure it's ready
+	if err := r.Ready(ctx); err != nil {
+		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: [refresh] %s did not become ready: %v", req.u, err))
+		sendReply(ctx, req.reply, struct{}{}, err)
+		return
+	}
+
 	r.SetNext(time.Unix(0, 0))
 	sendWorkerSynchronous(ctx, c.syncoutgoing, synchronousRequest{
 		resource: r,
 		reply:    req.reply,
 	})
-	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: sent sync (refresh) request for %s to backend", req.u))
+	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: [refresh] sync request for %s sent to worker pool", req.u))
 }
 
-func (c *controller) lookupResource(ctx context.Context, req lookupRequest) {
+func (c *ctrlBackend) lookupResource(ctx context.Context, req lookupRequest) {
 	u := req.u
 	r, ok := c.items[u]
 	if !ok {
@@ -94,7 +103,7 @@ func (c *controller) lookupResource(ctx context.Context, req lookupRequest) {
 	sendReply(ctx, req.reply, r, nil)
 }
 
-func (c *controller) handleRequest(ctx context.Context, req any) {
+func (c *ctrlBackend) handleRequest(ctx context.Context, req any) {
 	switch req := req.(type) {
 	case adjustIntervalRequest:
 		c.adjustInterval(ctx, req)
@@ -135,10 +144,23 @@ func sendReply[T any](ctx context.Context, ch chan backendResponse[T], v T, err 
 	}
 }
 
-func (c *controller) loop(ctx context.Context, wg *sync.WaitGroup) {
+type ctrlBackend struct {
+	items              map[string]Resource
+	outgoing           chan Resource
+	syncoutgoing       chan synchronousRequest
+	incoming           chan any // incoming requests to the controller
+	traceSink          TraceSink
+	tickInterval       time.Duration
+	check              *time.Ticker
+	defaultMaxInterval time.Duration
+	defaultMinInterval time.Duration
+}
+
+func (c *ctrlBackend) loop(ctx context.Context, readywg, donewg *sync.WaitGroup) {
 	c.traceSink.Put(ctx, "httprc controller: starting main controller loop")
+	readywg.Done()
 	defer c.traceSink.Put(ctx, "httprc controller: stopping main controller loop")
-	defer wg.Done()
+	defer donewg.Done()
 	for {
 		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: waiting for request or tick (tick interval=%s)", c.tickInterval))
 		select {
@@ -153,7 +175,7 @@ func (c *controller) loop(ctx context.Context, wg *sync.WaitGroup) {
 	}
 }
 
-func (c *controller) periodicCheck(ctx context.Context, t time.Time) {
+func (c *ctrlBackend) periodicCheck(ctx context.Context, t time.Time) {
 	c.traceSink.Put(ctx, "httprc controller: START periodic check")
 	defer c.traceSink.Put(ctx, "httprc controller: END periodic check")
 	var minNext time.Time
@@ -205,7 +227,7 @@ func (c *controller) periodicCheck(ctx context.Context, t time.Time) {
 	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: next check in %s", c.tickInterval))
 }
 
-func (c *controller) SetTickInterval(d time.Duration) {
+func (c *ctrlBackend) SetTickInterval(d time.Duration) {
 	// TODO synchronize
 	if d <= 0 {
 		d = time.Second // ensure positive interval

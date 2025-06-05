@@ -112,15 +112,14 @@ func (p *Proxy[T]) Put(ctx context.Context, v T) {
 		return
 	case p.ch <- v:
 		return
-	default:
-		// Channel might be closed or blocked
-		return
 	}
 }
 
 func (p *Proxy[T]) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.cond.Broadcast()
+
 	if !p.closed {
 		p.closed = true
 		close(p.ch)

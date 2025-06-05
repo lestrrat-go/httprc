@@ -74,7 +74,7 @@ func TestClientStart(t *testing.T) {
 		ctrl, err := cl.Start(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, ctrl)
-		defer ctrl.Shutdown(time.Second)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 	})
 
 	t.Run("start twice should fail", func(t *testing.T) {
@@ -169,7 +169,7 @@ func TestClientWithCustomSinks(t *testing.T) {
 		errorMessages = append(errorMessages, err.Error())
 	})
 
-	traceSink := tracesink.NewFunc(func(_ context.Context, msg string) {
+	traceSink := tracesink.Func(func(_ context.Context, msg string) {
 		mu.Lock()
 		defer mu.Unlock()
 		traceMessages = append(traceMessages, msg)
@@ -182,7 +182,7 @@ func TestClientWithCustomSinks(t *testing.T) {
 
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	// Add a resource to generate some trace messages
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -236,7 +236,7 @@ func TestClientMultipleResources(t *testing.T) {
 	cl := httprc.NewClient(httprc.WithWorkers(3))
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	// Create multiple resources
 	resources := make([]httprc.Resource, 0, 3)

@@ -76,7 +76,7 @@ func TestClient(t *testing.T) {
 	cl := httprc.NewClient(options...)
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, `cl.Run should succeed`)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	testcases := []struct {
 		URL       string
@@ -206,7 +206,7 @@ func TestRefresh(t *testing.T) {
 	cl := httprc.NewClient(options...)
 	ctrl, err := cl.Start(ctx)
 	require.NoError(t, err, `cl.Run should succeed`)
-	defer ctrl.Shutdown(time.Second)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
 
 	r, err := httprc.NewResource[map[string]int](srv.URL, httprc.JSONTransformer[map[string]int]())
 	require.NoError(t, err, `NewResource should succeed`)
