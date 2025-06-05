@@ -8,6 +8,7 @@ linters:
     - errorlint
     - exhaustive
     - forbidigo
+    - funcorder
     - funlen
     - gochecknoglobals
     - gochecknoinits
@@ -17,6 +18,7 @@ linters:
     - godot
     - godox
     - gosec
+    - gosmopolitan
     - govet
     - inamedparam
     - ireturn
