@@ -13,6 +13,7 @@ type Backend[T any] interface {
 // serialize calls to underlying sinks.
 type Proxy[T any] struct {
 	mu      *sync.Mutex
+	cancel  context.CancelFunc
 	ch      chan T
 	cond    *sync.Cond
 	pending []T
@@ -32,6 +33,12 @@ func New[T any](b Backend[T]) *Proxy[T] {
 
 func (p *Proxy[T]) Run(ctx context.Context) {
 	defer p.cond.Broadcast()
+
+	p.mu.Lock()
+	ctx, cancel := context.WithCancel(ctx)
+	p.cancel = cancel
+	p.mu.Unlock()
+
 	go p.controlloop(ctx)
 	go p.flushloop(ctx)
 
@@ -118,10 +125,10 @@ func (p *Proxy[T]) Put(ctx context.Context, v T) {
 func (p *Proxy[T]) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.cond.Broadcast()
 
 	if !p.closed {
 		p.closed = true
-		close(p.ch)
 	}
+	p.cancel()
+	p.cond.Broadcast()
 }
