@@ -183,7 +183,11 @@ func TestInterface(t *testing.T) {
 	t.Parallel()
 
 	// Ensure types implement the interface
-	var _ errsink.Interface = (*errsink.Nop)(nil)
-	var _ errsink.Interface = errsink.NewNop()
-	var _ errsink.Interface = errsink.NewSlog(&mockSlogger{})
+
+	//nolint:staticcheck
+	{
+		var _ errsink.Interface = (*errsink.Nop)(nil)
+		var _ errsink.Interface = errsink.NewNop()
+		var _ errsink.Interface = errsink.NewSlog(&mockSlogger{})
+	}
 }

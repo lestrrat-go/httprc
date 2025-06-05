@@ -181,7 +181,10 @@ func TestInterface(t *testing.T) {
 	t.Parallel()
 
 	// Ensure types implement the interface
-	var _ tracesink.Interface = (*tracesink.Nop)(nil)
-	var _ tracesink.Interface = tracesink.NewNop()
-	var _ tracesink.Interface = tracesink.NewSlog(&mockSlogger{})
+	//nolint:staticcheck
+	{
+		var _ tracesink.Interface = (*tracesink.Nop)(nil)
+		var _ tracesink.Interface = tracesink.NewNop()
+		var _ tracesink.Interface = tracesink.NewSlog(&mockSlogger{})
+	}
 }
