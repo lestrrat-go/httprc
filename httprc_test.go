@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/lestrrat-go/httprc/v3"
+	"github.com/lestrrat-go/httprc/v3/tracesink"
 	"github.com/stretchr/testify/require"
 )
 
@@ -219,5 +222,50 @@ func TestRefresh(t *testing.T) {
 		m := r.Resource()
 		require.Equal(t, i, m["count"], `r.Resource should return expected value`)
 		require.NoError(t, ctrl.Refresh(ctx, srv.URL), `r.Refresh should succeed`)
+	}
+}
+
+func Test_gh74(t *testing.T) {
+	// Test server that returns simple JSON data
+	testData := `{"test": "data"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(testData))
+	}))
+	t.Cleanup(func() { server.Close() })
+
+	// Create httprc client with trace logging
+	client := httprc.NewClient(
+		httprc.WithTraceSink(
+			tracesink.NewSlog(slog.New(slog.NewJSONHandler(os.Stdout, nil)))),
+	)
+
+	// Create a resource that transforms bytes
+	resource, err := httprc.NewResource[[]byte](server.URL, httprc.BytesTransformer())
+	require.NoError(t, err, "failed to create resource")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	// Start the client to get a controller
+	ctrl, err := client.Start(ctx)
+	require.NoError(t, err, "failed to start client")
+	defer func() {
+		_ = ctrl.Shutdown(time.Second)
+	}()
+
+	// Test the original issue: Add with WithWaitReady(false) followed by Refresh calls
+	// This would block before the fix
+	require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)), "Add should succeed")
+	
+	// These refresh calls would block indefinitely before the fix
+	for i := 0; i < 10; i++ {
+		err = ctrl.Refresh(ctx, server.URL)
+		require.NoError(t, err, "refresh should succeed on iteration %d", i)
+		
+		// Verify we can lookup the resource
+		res, err := ctrl.Lookup(ctx, server.URL)
+		require.NoError(t, err, "lookup should succeed")
+		require.NotNil(t, res, "resource should not be nil")
 	}
 }
