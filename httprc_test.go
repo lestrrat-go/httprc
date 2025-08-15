@@ -257,12 +257,12 @@ func Test_gh74(t *testing.T) {
 	// Test the original issue: Add with WithWaitReady(false) followed by Refresh calls
 	// This would block before the fix
 	require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)), "Add should succeed")
-	
+
 	// These refresh calls would block indefinitely before the fix
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		err = ctrl.Refresh(ctx, server.URL)
 		require.NoError(t, err, "refresh should succeed on iteration %d", i)
-		
+
 		// Verify we can lookup the resource
 		res, err := ctrl.Lookup(ctx, server.URL)
 		require.NoError(t, err, "lookup should succeed")
