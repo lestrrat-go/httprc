@@ -116,15 +116,15 @@ func TestClient(t *testing.T) {
 		{
 			URL: srv.URL + "/json/hellomap",
 			Create: func() (httprc.Resource, error) {
-				r, err := httprc.NewResource[map[string]interface{}](srv.URL+"/json/hellomap", httprc.JSONTransformer[map[string]interface{}]())
+				r, err := httprc.NewResource[map[string]any](srv.URL+"/json/hellomap", httprc.JSONTransformer[map[string]any]())
 				if err != nil {
 					return nil, err
 				}
 				r.SetMinInterval(time.Second)
 				return r, nil
 			},
-			Expected:  map[string]interface{}{"hello": "world"},
-			Expected2: map[string]interface{}{"hello": "world2"},
+			Expected:  map[string]any{"hello": "world"},
+			Expected2: map[string]any{"hello": "world2"},
 		},
 		{
 			URL: srv.URL + "/int",
@@ -162,7 +162,7 @@ func TestClient(t *testing.T) {
 			require.NoError(t, ctrl.Add(ctx, r), `ctrl.Add should succeed`)
 			require.NoError(t, r.Ready(ctx), `r.Ready should succeed`)
 
-			var dst interface{}
+			var dst any
 			require.NoError(t, r.Get(&dst), `r.Get should succeed`)
 
 			require.Equal(t, tc.Expected, dst, `r.Get should return expected value`)
@@ -176,7 +176,7 @@ func TestClient(t *testing.T) {
 			require.NoError(t, err, `ctrl.Lookup should succeed`)
 			require.Equal(t, tc.URL, r.URL(), `r.URL should return expected value`)
 
-			var dst interface{}
+			var dst any
 			require.NoError(t, r.Get(&dst), `r.Get should succeed`)
 
 			expected := tc.Expected2
@@ -195,7 +195,7 @@ func TestRefresh(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		count++
-		json.NewEncoder(w).Encode(map[string]interface{}{"count": count})
+		json.NewEncoder(w).Encode(map[string]any{"count": count})
 	})
 	srv := httptest.NewServer(h)
 	defer srv.Close()
