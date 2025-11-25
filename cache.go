@@ -28,7 +28,7 @@ type Cache struct {
 
 const defaultRefreshWindow = 15 * time.Minute
 
-// New creates a new Cache object.
+// NewCache creates a new Cache object.
 //
 // The context object in the argument controls the life-cycle of the
 // auto-refresh worker. If you cancel the `ctx`, then the automatic

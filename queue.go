@@ -112,7 +112,7 @@ func newQueue(ctx context.Context, registry *registry, window time.Duration, fet
 
 func (q *queue) Register(u string, options ...RegisterOption) error {
 	var refreshInterval time.Duration
-	//nolint:revive,stylecheck
+	//nolint:revive,stylecheck,staticcheck
 	var client HTTPClient = q.client
 	var wl Whitelist
 	var transform Transformer = BodyBytes{}

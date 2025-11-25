@@ -1,23 +1,15 @@
-run:
-
-linters-settings:
-  govet:
-    enable-all: true
-    disable:
-      - shadow
-      - fieldalignment
-
+version: "2"
 linters:
-  enable-all: true
+  default: all
   disable:
     - cyclop
     - depguard
     - dupl
-    - exhaustive
     - err113
     - errorlint
+    - exhaustive
+    - funcorder
     - funlen
-    - gci
     - gochecknoglobals
     - gochecknoinits
     - gocognit
@@ -25,57 +17,78 @@ linters:
     - gocyclo
     - godot
     - godox
-    - gofumpt
     - gosec
     - govet
     - inamedparam
-    - ireturn # No, I _LIKE_ returning interfaces
+    - ireturn
     - lll
-    - maintidx # Do this in code review
+    - maintidx
     - makezero
     - mnd
     - nakedret
     - nestif
     - nlreturn
-    - nonamedreturns # visit this back later
+    - noinlineerr
+    - nonamedreturns
     - paralleltest
     - tagliatelle
     - testpackage
-    - thelper    # Tests are fine
-    - varnamelen # Short names are ok
+    - thelper
+    - varnamelen
     - wrapcheck
     - wsl
-
+    - wsl_v5
+  settings:
+    govet:
+      disable:
+        - shadow
+        - fieldalignment
+      enable-all: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - staticcheck
+        path: /*.go
+        text: 'ST1003: should not use underscores in package names'
+      - linters:
+          - revive
+        path: /*.go
+        text: don't use an underscore in package name
+      - linters:
+          - contextcheck
+          - exhaustruct
+        path: /*.go
+      - linters:
+          - errcheck
+        path: /main.go
+      - linters:
+          - errcheck
+          - errchkjson
+          - forcetypeassert
+        path: /*_test.go
+      - linters:
+          - forbidigo
+        path: /*_example_test.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-rules:
-    # not needed
-    - path: /*.go
-      text: "ST1003: should not use underscores in package names"
-      linters:
-        - stylecheck
-    - path: /*.go
-      text: "don't use an underscore in package name"
-      linters:
-        - revive
-    - path: /*.go
-      linters:
-        - contextcheck
-        - exhaustruct
-    - path: /main.go
-      linters:
-        - errcheck
-    - path: /*_test.go
-      linters:
-        - errcheck
-        - errchkjson
-        - forcetypeassert
-    - path: /*_example_test.go
-      linters:
-        - forbidigo
-
-  # Maximum issues count per one linter. Set to 0 to disable. Default is 50.
   max-issues-per-linter: 0
-
-  # Maximum count of issues with the same text. Set to 0 to disable. Default is 3.
   max-same-issues: 0
-
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
