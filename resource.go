@@ -109,7 +109,7 @@ func (r *ResourceBase[T]) Ready(ctx context.Context) error {
 // returns `A` or `B` depending on the type of the resource. When accessing the
 // resource through the `httprc.Resource` interface, use this method to obtain the
 // stored value.
-func (r *ResourceBase[T]) Get(dst interface{}) error {
+func (r *ResourceBase[T]) Get(dst any) error {
 	return blackmagic.AssignIfCompatible(dst, r.Resource())
 }
 

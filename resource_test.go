@@ -80,7 +80,7 @@ func TestResourceTransformers(t *testing.T) {
 		switch r.URL.Path {
 		case "/json":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"string": "test",
 				"number": 42,
 				"bool":   true,
@@ -114,15 +114,15 @@ func TestResourceTransformers(t *testing.T) {
 
 	t.Run("JSON transformer", func(t *testing.T) {
 		t.Parallel()
-		resource, err := httprc.NewResource[map[string]interface{}](
+		resource, err := httprc.NewResource[map[string]any](
 			srv.URL+"/json",
-			httprc.JSONTransformer[map[string]interface{}](),
+			httprc.JSONTransformer[map[string]any](),
 		)
 		require.NoError(t, err, "JSON resource creation should succeed")
 
 		require.NoError(t, ctrl.Add(ctx, resource), "adding JSON resource should succeed")
 
-		var data map[string]interface{}
+		var data map[string]any
 		require.NoError(t, resource.Get(&data), "getting JSON data should succeed")
 		require.Equal(t, "test", data["string"])
 		require.InEpsilon(t, 42.0, data["number"], 1e-9) // JSON numbers are float64
@@ -169,9 +169,9 @@ func TestResourceTransformers(t *testing.T) {
 	t.Run("transformer error handling", func(t *testing.T) {
 		t.Parallel()
 		// JSON transformer should fail on invalid JSON
-		resource, err := httprc.NewResource[map[string]interface{}](
+		resource, err := httprc.NewResource[map[string]any](
 			srv.URL+"/invalid-json",
-			httprc.JSONTransformer[map[string]interface{}](),
+			httprc.JSONTransformer[map[string]any](),
 		)
 		require.NoError(t, err, "invalid JSON resource creation should succeed")
 

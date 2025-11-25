@@ -3,6 +3,7 @@ package proxysink_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -506,14 +507,7 @@ func TestProxyLargePendingSliceReallocation(t *testing.T) {
 	// Check all values are present
 	for i := range numValues {
 		expected := fmt.Sprintf("realloc_%d", i)
-		found := false
-		for _, put := range puts {
-			if put == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(puts, expected) {
 			t.Errorf("missing expected value: %s", expected)
 		}
 	}

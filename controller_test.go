@@ -382,7 +382,7 @@ func TestControllerConcurrentOperations(t *testing.T) {
 	wg.Wait()
 
 	// Verify all resources can be looked up
-	addedURLs.Range(func(key, _ interface{}) bool {
+	addedURLs.Range(func(key, _ any) bool {
 		testURL := key.(string)
 		_, err := ctrl.Lookup(ctx, testURL)
 		require.NoError(t, err, "should be able to lookup %s", testURL)
