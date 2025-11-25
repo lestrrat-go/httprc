@@ -8,6 +8,7 @@ linters:
     - err113
     - errorlint
     - exhaustive
+    - funcorder
     - funlen
     - gochecknoglobals
     - gochecknoinits
@@ -27,6 +28,7 @@ linters:
     - nakedret
     - nestif
     - nlreturn
+    - noinlineerr
     - nonamedreturns
     - paralleltest
     - tagliatelle
