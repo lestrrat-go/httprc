@@ -7,7 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/lestrrat-go/blackmagic v1.0.4
 	github.com/lestrrat-go/httpcc v1.0.1
-	github.com/lestrrat-go/option v1.0.1
+	github.com/lestrrat-go/option/v2 v2.0.0
 	github.com/stretchr/testify v1.11.1
 )
 
