@@ -44,13 +44,21 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 	for _, option := range options {
 		switch option.Ident() {
 		case identHTTPClient{}:
-			option.Value(&httpcl)
+			if err := option.Value(&httpcl); err != nil {
+				return nil, fmt.Errorf(`httprc.NewResource: failed to parse HTTPClient option: %w`, err)
+			}
 		case identMinimumInterval{}:
-			option.Value(&minInterval)
+			if err := option.Value(&minInterval); err != nil {
+				return nil, fmt.Errorf(`httprc.NewResource: failed to parse MinimumInterval option: %w`, err)
+			}
 		case identMaximumInterval{}:
-			option.Value(&maxInterval)
+			if err := option.Value(&maxInterval); err != nil {
+				return nil, fmt.Errorf(`httprc.NewResource: failed to parse MaximumInterval option: %w`, err)
+			}
 		case identConstantInterval{}:
-			option.Value(&interval)
+			if err := option.Value(&interval); err != nil {
+				return nil, fmt.Errorf(`httprc.NewResource: failed to parse ConstantInterval option: %w`, err)
+			}
 		}
 	}
 	if transformer == nil {

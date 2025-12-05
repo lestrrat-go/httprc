@@ -126,7 +126,9 @@ func (c *controller) Add(ctx context.Context, r Resource, options ...AddOption) 
 	for _, option := range options {
 		switch option.Ident() {
 		case identWaitReady{}:
-			option.Value(&waitReady)
+			if err := option.Value(&waitReady); err != nil {
+				return fmt.Errorf(`httprc.Controller.Add: failed to parse WaitReady option: %w`, err)
+			}
 		}
 	}
 
