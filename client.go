@@ -63,19 +63,18 @@ func NewClient(options ...NewClientOption) *Client {
 	defaultMaxInterval := DefaultMaxInterval
 
 	numWorkers := DefaultWorkers
-	//nolint:forcetypeassert
 	for _, option := range options {
 		switch option.Ident() {
 		case identHTTPClient{}:
-			httpcl = option.Value().(HTTPClient)
+			option.Value(&httpcl)
 		case identWorkers{}:
-			numWorkers = option.Value().(int)
+			option.Value(&numWorkers)
 		case identErrorSink{}:
-			errSink = option.Value().(ErrorSink)
+			option.Value(&errSink)
 		case identTraceSink{}:
-			traceSink = option.Value().(TraceSink)
+			option.Value(&traceSink)
 		case identWhitelist{}:
-			wl = option.Value().(Whitelist)
+			option.Value(&wl)
 		}
 	}
 

@@ -41,17 +41,16 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 	var interval time.Duration
 	minInterval := DefaultMinInterval
 	maxInterval := DefaultMaxInterval
-	//nolint:forcetypeassert
 	for _, option := range options {
 		switch option.Ident() {
 		case identHTTPClient{}:
-			httpcl = option.Value().(HTTPClient)
+			option.Value(&httpcl)
 		case identMinimumInterval{}:
-			minInterval = option.Value().(time.Duration)
+			option.Value(&minInterval)
 		case identMaximumInterval{}:
-			maxInterval = option.Value().(time.Duration)
+			option.Value(&maxInterval)
 		case identConstantInterval{}:
-			interval = option.Value().(time.Duration)
+			option.Value(&interval)
 		}
 	}
 	if transformer == nil {

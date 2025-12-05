@@ -123,11 +123,10 @@ func (c *controller) Add(ctx context.Context, r Resource, options ...AddOption) 
 	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: START Add(%q)", r.URL()))
 	defer c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: END   Add(%q)", r.URL()))
 	waitReady := true
-	//nolint:forcetypeassert
 	for _, option := range options {
 		switch option.Ident() {
 		case identWaitReady{}:
-			waitReady = option.(addOption).Value().(bool)
+			option.Value(&waitReady)
 		}
 	}
 
