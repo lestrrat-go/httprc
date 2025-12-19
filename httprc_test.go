@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -540,22 +541,52 @@ func TestAdd_retry_logic_distinguishes_errors(t *testing.T) {
 	require.NoError(t, err3, "existing resource should become ready")
 }
 
+// controlledHandler implements a deterministic HTTP handler for testing
+// retry logic. It uses an atomic counter to control exactly when to
+// transition from failure (invalid JSON) to success (valid JSON).
+// See DESIGN_SYNC_TEST.md for detailed design rationale.
+type controlledHandler struct {
+	failuresRemaining atomic.Int32
+}
+
+func (h *controlledHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+
+	// Atomically decrement and check if we should still fail
+	if remaining := h.failuresRemaining.Add(-1); remaining >= 0 {
+		// Still have failures remaining, return invalid JSON
+		w.Write([]byte(`{invalid json`))
+	} else {
+		// No more failures needed, return valid JSON
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}
+}
+
 // TestIntegration_invalid_json_background_retry tests the end-to-end flow
 // when a server initially returns invalid JSON, then valid JSON on retry
 func TestIntegration_invalid_json_background_retry(t *testing.T) {
 	t.Parallel()
 
-	// Setup: Server that initially returns invalid JSON, then valid JSON after
-	callCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		callCount++
-		w.WriteHeader(http.StatusOK)
-		if callCount <= 2 {
-			w.Write([]byte(`{invalid`)) // Invalid JSON for first 2 calls
-		} else {
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-		}
-	}))
+	// Test configuration
+	const (
+		minInterval = 100 * time.Millisecond
+		timeout     = 500 * time.Millisecond
+	)
+
+	// Validate preconditions
+	require.Greater(t, timeout, minInterval,
+		"timeout must be greater than minInterval to allow at least one fetch")
+
+	// Setup controlled server
+	// Calculate failures needed with 2x safety margin to guarantee timeout
+	// Formula: (timeout / minInterval) * 2
+	// Note: Integer division truncates, making this calculation conservative
+	// Example: (500ms / 100ms) * 2 = 5 * 2 = 10 failures
+	failuresNeeded := int32((timeout / minInterval) * 2)
+
+	handler := &controlledHandler{}
+	handler.failuresRemaining.Store(failuresNeeded)
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
 	ctx := context.Background()
@@ -567,27 +598,42 @@ func TestIntegration_invalid_json_background_retry(t *testing.T) {
 	resource, err := httprc.NewResource[map[string]string](
 		server.URL,
 		httprc.JSONTransformer[map[string]string](),
-		httprc.WithMinInterval(100*time.Millisecond),
+		httprc.WithMinInterval(minInterval),
 	)
 	require.NoError(t, err)
 
-	// Act: Add with short timeout (will get invalid JSON)
-	addCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	// Add resource with timeout
+	// Server is configured to fail enough times that timeout will fire
+	addCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	err = ctrl.Add(addCtx, resource)
 
-	// Assert: Should return ErrNotReady
+	// Assert ErrNotReady returned
+	// Guaranteed because server will keep failing until we change the counter
 	require.ErrorIs(t, err, httprc.ErrNotReady(), "expected ErrNotReady")
 
-	// Wait for background retry to succeed
+	// Verify resource is in backend (registration succeeded)
+	existing, lookupErr := ctrl.Lookup(ctx, server.URL)
+	require.NoError(t, lookupErr, "resource should be in backend")
+	require.NotNil(t, existing, "resource should exist")
+
+	// Allow server to succeed on next fetch
+	// Safe to modify counter now because:
+	// - Previous fetch failed (we got ErrNotReady)
+	// - Next fetch won't start until minInterval elapses
+	// - No concurrent access to the counter at this moment
+	handler.failuresRemaining.Store(0)
+
+	// Wait for background retry to make resource ready
+	// The next fetch attempt will succeed and close the ready channel
 	readyCtx, readyCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer readyCancel()
 
 	err = resource.Ready(readyCtx)
 	require.NoError(t, err, "resource should become ready after background retry")
 
-	// Verify data is now available
+	// Verify data is available
 	var data map[string]string
 	err = resource.Get(&data)
 	require.NoError(t, err, "should be able to get data")
