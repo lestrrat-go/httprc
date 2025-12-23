@@ -19,5 +19,5 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
       - name: Test
-        run: go test -v -race 
+        run: go test -v -race -timeout=5m
 
