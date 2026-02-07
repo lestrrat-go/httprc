@@ -640,6 +640,156 @@ func TestIntegration_invalid_json_background_retry(t *testing.T) {
 	require.Equal(t, "ok", data["status"], "data should have correct status")
 }
 
+// TestGH1551 reproduces the deadlock described in
+// https://github.com/lestrrat-go/jwx/issues/1551.
+//
+// When manual Refresh() calls fail (e.g. HTTP 500), each failure kills the
+// worker goroutine that processed it (worker.go returns on sync error).
+// After N failures (where N = number of workers), all workers are dead and
+// subsequent Refresh() calls block forever because nobody drains the
+// syncoutgoing channel.
+func TestGH1551(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sync refresh deadlock", func(t *testing.T) {
+		t.Parallel()
+
+		const numWorkers = 3
+
+		// Server that always returns HTTP 500
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}))
+		t.Cleanup(srv.Close)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		traceDst := io.Discard
+		if testing.Verbose() {
+			traceDst = os.Stderr
+		}
+
+		cl := httprc.NewClient(
+			httprc.WithWorkers(numWorkers),
+			httprc.WithTraceSink(tracesink.NewSlog(slog.New(slog.NewJSONHandler(traceDst, nil)))),
+		)
+		ctrl, err := cl.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
+
+		// Register a resource without waiting for it to become ready
+		// (since it will never succeed with a 500 server)
+		resource, err := httprc.NewResource[[]byte](
+			srv.URL,
+			httprc.BytesTransformer(),
+			httprc.WithConstantInterval(time.Hour), // prevent periodic refresh from interfering
+		)
+		require.NoError(t, err)
+		require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)))
+
+		// Fire numWorkers Refresh() calls that all fail. Each one kills a worker.
+		for i := range numWorkers {
+			refreshCtx, refreshCancel := context.WithTimeout(ctx, 5*time.Second)
+			err := ctrl.Refresh(refreshCtx, srv.URL)
+			refreshCancel()
+			// The refresh should return an error (HTTP 500), not hang.
+			require.Error(t, err, "Refresh #%d should return an error", i)
+			t.Logf("Refresh #%d failed as expected: %v", i, err)
+		}
+
+		// At this point all workers should be dead (before the fix).
+		// The next Refresh() call will deadlock because no worker is alive
+		// to drain the syncoutgoing channel.
+		t.Log("All workers should have failed. Attempting one more Refresh()...")
+
+		deadlockCtx, deadlockCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer deadlockCancel()
+
+		err = ctrl.Refresh(deadlockCtx, srv.URL)
+		// Before the fix: this blocks until deadlockCtx expires (context.DeadlineExceeded).
+		// After the fix: this should return promptly with the HTTP 500 error.
+		require.Error(t, err, "Refresh after all workers failed should still return an error")
+		require.NotErrorIs(t, err, context.DeadlineExceeded,
+			"Refresh should not deadlock (got context deadline exceeded, indicating workers are stuck)")
+		t.Logf("Post-failure Refresh returned: %v", err)
+	})
+
+	// Verify that periodic (async) refresh continues to function even after
+	// synchronous Refresh() calls have failed. Before the fix, dead workers
+	// meant async refreshes also stopped being processed.
+	t.Run("async refresh still works after sync failures", func(t *testing.T) {
+		t.Parallel()
+
+		const numWorkers = 2
+
+		// Server that starts returning 500, then switches to 200
+		var shouldFail atomic.Bool
+		shouldFail.Store(true)
+
+		var successCount atomic.Int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if shouldFail.Load() {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			successCount.Add(1)
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write([]byte("ok"))
+		}))
+		t.Cleanup(srv.Close)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		traceDst := io.Discard
+		if testing.Verbose() {
+			traceDst = os.Stderr
+		}
+
+		cl := httprc.NewClient(
+			httprc.WithWorkers(numWorkers),
+			httprc.WithTraceSink(tracesink.NewSlog(slog.New(slog.NewJSONHandler(traceDst, nil)))),
+		)
+		ctrl, err := cl.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { ctrl.Shutdown(time.Second) })
+
+		resource, err := httprc.NewResource[[]byte](
+			srv.URL,
+			httprc.BytesTransformer(),
+			httprc.WithConstantInterval(500*time.Millisecond), // short interval for async refresh
+		)
+		require.NoError(t, err)
+		require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)))
+
+		// Let the initial async fetch (triggered by Add) complete before
+		// starting sync refreshes, to avoid a race between the async
+		// dispatch and the synchronous Refresh calls.
+		time.Sleep(time.Second)
+
+		// Kill all workers via failed sync refreshes
+		for i := range numWorkers {
+			refreshCtx, refreshCancel := context.WithTimeout(ctx, 5*time.Second)
+			err := ctrl.Refresh(refreshCtx, srv.URL)
+			refreshCancel()
+			require.Error(t, err, "Refresh #%d should fail", i)
+		}
+
+		// Now make the server return 200
+		shouldFail.Store(false)
+		countBefore := successCount.Load()
+
+		// Wait for async refreshes to pick up the resource
+		time.Sleep(3 * time.Second)
+
+		countAfter := successCount.Load()
+		require.Greater(t, countAfter, countBefore,
+			"Async refresh should still work after sync refresh failures killed workers. "+
+				"No successful requests were made, indicating workers are dead.")
+	})
+}
+
 // TestIntegration_multiple_ready_calls_after_err_not_ready tests that multiple
 // Ready() calls work correctly after ErrNotReady
 func TestIntegration_multiple_ready_calls_after_err_not_ready(t *testing.T) {
