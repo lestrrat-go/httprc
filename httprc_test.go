@@ -3,6 +3,7 @@ package httprc_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,8 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jarcoal/httpmock"
 	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/httprc/v3/tracesink"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -858,4 +861,75 @@ func TestIntegration_multiple_ready_calls_after_err_not_ready(t *testing.T) {
 	err = existing.Get(&data2)
 	require.NoError(t, err, "should still be able to get data")
 	require.Equal(t, "ok", data2["status"])
+}
+
+func TestCacheLock(t *testing.T) {
+	// Test from https://github.com/lestrrat-go/httprc/issues/113
+	// so one worker can support at most n=4-5 URLs at the same time during periodic check
+	var (
+		ctx                = t.Context()
+		r                  = require.New(t)
+		n                  = 6                // 5 sometimes passes and sometimes fails, 6 always fails for me with deadlock
+		httpWorkers        = 1                // faced this same issue with 5-10-20 workers and greater number of URLs, but it was much harder to track the issue registerTimeout = time.Second * 10
+		minRefreshInterval = time.Second      // my original time was 5m, decreased for the purpose of testing
+		maxRefreshInterval = time.Second * 2  // my original time was 10m, decreased for the purpose of testing
+		registerTimeout    = time.Second * 10 // just so test won't hang forever
+		mockTransport      = httpmock.NewMockTransport()
+		httpClient         = &http.Client{Transport: mockTransport}
+		urls               = make([]string, n)
+		jwksResponse       = `{ 
+			"keys": [ 
+				{ 
+					"kty": "RSA", 
+					"use": "sig", 
+					"kid": "test-key-1", 
+					"n": "test-modulus", 
+					"e": "AQAB" 
+				} 
+			] 
+		}`
+	)
+	defer mockTransport.Reset()
+	// adding n number of URLs to mock transport
+	for i := range n {
+		url := fmt.Sprintf("https://issuer.example.com/test_url_%d/.well-known/jwks.json", i)
+		urls[i] = url
+		mockTransport.RegisterResponder("GET", url,
+			httpmock.NewStringResponder(200, jwksResponse))
+	}
+	// create cache
+	jwkCache, err := jwk.NewCache(ctx,
+		httprc.NewClient(httprc.WithHTTPClient(httpClient),
+			httprc.WithWorkers(httpWorkers)))
+	r.NoError(err)
+	// register n number of URLs
+	registerFn := func(url string) {
+		regCtx, cancel := context.WithTimeout(ctx, registerTimeout)
+		defer cancel()
+		err := jwkCache.Register(regCtx, url,
+			jwk.WithMinInterval(minRefreshInterval),
+			jwk.WithMaxInterval(maxRefreshInterval),
+			jwk.WithWaitReady(true))
+		r.NoError(err)
+		_, err = jwkCache.CachedSet(url)
+		r.NoError(err)
+	}
+	for _, url := range urls {
+		registerFn(url)
+	}
+	// prove that all URLs were fetched once
+	//mockTransport.GetCallCountInfo()
+	//for key, called := range mockTransport.GetCallCountInfo() {
+	//	r.Equal(1, called, "each URL should be fetched exactly once: %s", key)
+	//}
+	// you can add some checks to ensure keys are ready here, but I'm omitting it as it's irrelevant to the issue
+	// wait for periodic check to fire
+	<-time.After(time.Second * 3)
+	// mocking new URL
+	newURL := "https://issuer.example.com/new_test_url/.well-known/jwks.json"
+	mockTransport.RegisterResponder("GET", newURL,
+		httpmock.NewStringResponder(200, jwksResponse))
+	// try registering new url, this will hand for registerTimeout because periodic check has a deadlock on incoming channel
+	registerFn(newURL)
+	r.NoError(err)
 }

@@ -180,27 +180,33 @@ func (c *ctrlBackend) periodicCheck(ctx context.Context, t time.Time) {
 	var dispatched int
 	minInterval := -1 * time.Second
 	for _, item := range c.items {
-		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: checking resource %q", item.URL()))
+		select {
+		case <-ctx.Done():
+			c.traceSink.Put(ctx, "httprc controller: stopping periodic check due to context cancellation")
+			return
+		default:
+			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: checking resource %q", item.URL()))
 
-		next := item.Next()
-		if minNext.IsZero() || next.Before(minNext) {
-			minNext = next
+			next := item.Next()
+			if minNext.IsZero() || next.Before(minNext) {
+				minNext = next
+			}
+
+			if interval := item.MinInterval(); minInterval < 0 || interval < minInterval {
+				minInterval = interval
+			}
+
+			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: resource %q isBusy=%t, next(%s).After(%s)=%t", item.URL(), item.IsBusy(), next, t, next.After(t)))
+			if item.IsBusy() || next.After(t) {
+				c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: resource %q is busy or not ready yet, skipping", item.URL()))
+				continue
+			}
+			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: resource %q is ready, dispatching to worker pool", item.URL()))
+
+			dispatched++
+			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: dispatching resource %q to worker pool", item.URL()))
+			sendWorker(ctx, c.outgoing, item)
 		}
-
-		if interval := item.MinInterval(); minInterval < 0 || interval < minInterval {
-			minInterval = interval
-		}
-
-		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: resource %q isBusy=%t, next(%s).After(%s)=%t", item.URL(), item.IsBusy(), next, t, next.After(t)))
-		if item.IsBusy() || next.After(t) {
-			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: resource %q is busy or not ready yet, skipping", item.URL()))
-			continue
-		}
-		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: resource %q is ready, dispatching to worker pool", item.URL()))
-
-		dispatched++
-		c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: dispatching resource %q to worker pool", item.URL()))
-		sendWorker(ctx, c.outgoing, item)
 	}
 
 	c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: dispatched %d resources", dispatched))
