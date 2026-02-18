@@ -59,9 +59,11 @@ func (w worker) sendAdjustIntervalRequest(ctx context.Context, r Resource) {
 		close(started)
 		select {
 		case <-ctx.Done():
+			w.traceSink.Put(ctx, fmt.Sprintf("httprc worker: Ending sending interval adjustment attempt: context error: %s", ctx.Err().Error()))
+			return
 		case w.incoming <- adjustIntervalRequest{resource: r}:
+			w.traceSink.Put(ctx, "httprc worker: Sent interval adjustment request for "+r.URL())
 		}
-		w.traceSink.Put(ctx, "httprc worker: Sent interval adjustment request for "+r.URL())
 	}(ctx, r)
 	<-started
 }
