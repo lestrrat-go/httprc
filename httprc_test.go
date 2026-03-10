@@ -859,3 +859,103 @@ func TestIntegration_multiple_ready_calls_after_err_not_ready(t *testing.T) {
 	require.NoError(t, err, "should still be able to get data")
 	require.Equal(t, "ok", data2["status"])
 }
+
+// TestPeriodicCheckDeadlock reproduces the deadlock described in
+// https://github.com/lestrrat-go/httprc/issues/113
+//
+// The deadlock occurs when:
+//  1. periodicCheck iterates items and calls sendWorker(ctx, c.outgoing, item)
+//     for each ready resource
+//  2. With 1 worker and N>1 ready resources, the controller blocks trying to
+//     send the 2nd item to c.outgoing (unbuffered)
+//  3. The worker that picked up the 1st item finishes and calls
+//     sendAdjustIntervalRequest, which sends to w.incoming (= c.incoming)
+//  4. But c.incoming is read by ctrlBackend.loop(), which is blocked inside
+//     periodicCheck trying to send to c.outgoing
+//  5. Circular wait → deadlock
+//
+// The test registers multiple resources with 1 worker and short refresh
+// intervals, waits for a periodic check to fire, then attempts to register
+// a new resource (which also sends to c.incoming). If the deadlock is
+// present, the new registration will hang until the context deadline.
+func TestPeriodicCheckDeadlock(t *testing.T) {
+	t.Parallel()
+
+	const (
+		numResources       = 6
+		numWorkers         = 1
+		minRefreshInterval = time.Second
+		maxRefreshInterval = 2 * time.Second
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	traceDst := io.Discard
+	if testing.Verbose() {
+		traceDst = os.Stderr
+	}
+
+	cl := httprc.NewClient(
+		httprc.WithWorkers(numWorkers),
+		httprc.WithTraceSink(tracesink.NewSlog(slog.New(slog.NewJSONHandler(traceDst, nil)))),
+	)
+	ctrl, err := cl.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
+
+	// Register N resources, all with the same short refresh interval.
+	// Each resource uses a distinct URL path so they are treated as separate items.
+	for i := range numResources {
+		url := srv.URL + "/resource/" + strconv.Itoa(i)
+		r, err := httprc.NewResource[map[string]string](
+			url,
+			httprc.JSONTransformer[map[string]string](),
+			httprc.WithMinInterval(minRefreshInterval),
+			httprc.WithMaxInterval(maxRefreshInterval),
+		)
+		require.NoError(t, err, "NewResource should succeed for resource %d", i)
+
+		addCtx, addCancel := context.WithTimeout(ctx, 10*time.Second)
+		err = ctrl.Add(addCtx, r)
+		addCancel()
+		require.NoError(t, err, "Add should succeed for resource %d", i)
+	}
+
+	// Wait long enough for all resources to become due for periodic refresh.
+	// maxRefreshInterval + 1s gives headroom for the tick to fire.
+	time.Sleep(maxRefreshInterval + time.Second)
+
+	// Now attempt to register a new resource. This sends an addRequest to
+	// c.incoming. If the deadlock is present, periodicCheck is blocked
+	// sending to c.outgoing while the worker is blocked sending to
+	// c.incoming, so this Add will hang.
+	newURL := srv.URL + "/resource/new"
+	newR, err := httprc.NewResource[map[string]string](
+		newURL,
+		httprc.JSONTransformer[map[string]string](),
+		httprc.WithMinInterval(minRefreshInterval),
+		httprc.WithMaxInterval(maxRefreshInterval),
+	)
+	require.NoError(t, err, "NewResource should succeed for new resource")
+
+	addCtx, addCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer addCancel()
+
+	err = ctrl.Add(addCtx, newR)
+
+	// Before fix: context.DeadlineExceeded (Add hangs for 5s, then times out)
+	// After fix: succeeds promptly
+	require.NoError(t, err, "Add should not deadlock; got timeout indicating periodicCheck deadlock (issue #113)")
+
+	// Verify the new resource is accessible
+	existing, lookupErr := ctrl.Lookup(ctx, newURL)
+	require.NoError(t, lookupErr, "Lookup should find the newly added resource")
+	require.Equal(t, newURL, existing.URL())
+}
