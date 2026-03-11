@@ -158,6 +158,18 @@ func (c *ctrlBackend) loop(ctx context.Context, readywg, donewg *sync.WaitGroup)
 			// Dispatch pending items while remaining responsive to incoming
 			// requests. This prevents a deadlock where periodicCheck blocks
 			// on c.outgoing while a worker blocks on c.incoming (issue #113).
+
+			// Skip resources that were removed (or replaced) after periodicCheck
+			// queued them. Without this check, a stale resource could be sent to
+			// a worker, causing an unnecessary fetch and a subsequent
+			// adjustIntervalRequest for a resource that is no longer registered.
+			if _, ok := c.items[pending[0].URL()]; !ok {
+				c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: skipping pending resource %q (no longer registered)", pending[0].URL()))
+				pending[0].SetBusy(false)
+				pending = pending[1:]
+				continue
+			}
+
 			c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: dispatching pending resource %q to worker pool (%d remaining)", pending[0].URL(), len(pending)))
 			select {
 			case req := <-c.incoming:

@@ -865,14 +865,16 @@ func TestIntegration_multiple_ready_calls_after_err_not_ready(t *testing.T) {
 //
 // The deadlock occurs when:
 //  1. periodicCheck iterates items and calls sendWorker(ctx, c.outgoing, item)
-//     for each ready resource
-//  2. With 1 worker and N>1 ready resources, the controller blocks trying to
-//     send the 2nd item to c.outgoing (unbuffered)
+//     for each ready resource.
+//  2. c.outgoing is a buffered channel with capacity numWorkers+1. With
+//     numWorkers=1, it can hold 2 items. With 1 worker and N>2 ready
+//     resources, the controller eventually blocks trying to send the 3rd
+//     item to c.outgoing once the buffer is full.
 //  3. The worker that picked up the 1st item finishes and calls
-//     sendAdjustIntervalRequest, which sends to w.incoming (= c.incoming)
-//  4. But c.incoming is read by ctrlBackend.loop(), which is blocked inside
-//     periodicCheck trying to send to c.outgoing
-//  5. Circular wait → deadlock
+//     sendAdjustIntervalRequest, which sends to w.incoming (= c.incoming).
+//  4. But c.incoming is read by ctrlBackend.loop(), which is currently
+//     blocked inside periodicCheck trying to send to c.outgoing.
+//  5. Circular wait → deadlock.
 //
 // The test registers multiple resources with 1 worker and short refresh
 // intervals, waits for a periodic check to fire, then attempts to register
