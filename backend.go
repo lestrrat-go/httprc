@@ -164,6 +164,9 @@ func (c *ctrlBackend) loop(ctx context.Context, readywg, donewg *sync.WaitGroup)
 			// a worker, causing an unnecessary fetch and a subsequent
 			// adjustIntervalRequest for a resource that is no longer registered.
 			r := pending[0]
+			// Compare interface values directly. This is safe because all
+			// Resource implementations are pointer types (*ResourceBase[T]),
+			// so the comparison is a pointer identity check.
 			if cur, ok := c.items[r.URL()]; !ok || cur != r {
 				c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: skipping pending resource %q (no longer registered or replaced)", r.URL()))
 				r.SetBusy(false)
@@ -178,6 +181,8 @@ func (c *ctrlBackend) loop(ctx context.Context, readywg, donewg *sync.WaitGroup)
 				c.handleRequest(ctx, req)
 			case c.outgoing <- pending[0]:
 				pending = pending[1:]
+			case t := <-c.check.C:
+				pending = append(pending, c.periodicCheck(ctx, t)...)
 			case <-ctx.Done():
 				return
 			}

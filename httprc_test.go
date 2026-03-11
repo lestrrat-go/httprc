@@ -951,7 +951,9 @@ func TestPeriodicCheckDeadlock(t *testing.T) {
 	addCtx, addCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer addCancel()
 
-	err = ctrl.Add(addCtx, newR)
+	// Use WithWaitReady(false) so that a timeout here can only be caused by
+	// the controller deadlock, not by a slow initial fetch under backlog.
+	err = ctrl.Add(addCtx, newR, httprc.WithWaitReady(false))
 
 	// Before fix: context.DeadlineExceeded (Add hangs for 5s, then times out)
 	// After fix: succeeds promptly
