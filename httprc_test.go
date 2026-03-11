@@ -864,16 +864,17 @@ func TestIntegration_multiple_ready_calls_after_err_not_ready(t *testing.T) {
 // https://github.com/lestrrat-go/httprc/issues/113
 //
 // The deadlock occurs when:
-//  1. periodicCheck iterates items and calls sendWorker(ctx, c.outgoing, item)
-//     for each ready resource.
+//  1. A periodic check in the controller iterates ready resources and
+//     queues work for them by sending items on c.outgoing.
 //  2. c.outgoing is a buffered channel with capacity numWorkers+1. With
 //     numWorkers=1, it can hold 2 items. With 1 worker and N>2 ready
 //     resources, the controller eventually blocks trying to send the 3rd
 //     item to c.outgoing once the buffer is full.
-//  3. The worker that picked up the 1st item finishes and calls
-//     sendAdjustIntervalRequest, which sends to w.incoming (= c.incoming).
-//  4. But c.incoming is read by ctrlBackend.loop(), which is currently
-//     blocked inside periodicCheck trying to send to c.outgoing.
+//  3. The worker that picked up the 1st item finishes and attempts to send
+//     a control message (such as an interval adjustment) to w.incoming
+//     (= c.incoming).
+//  4. But c.incoming is read by the controller loop, which is currently
+//     blocked trying to send to c.outgoing.
 //  5. Circular wait → deadlock.
 //
 // The test registers multiple resources with 1 worker and short refresh

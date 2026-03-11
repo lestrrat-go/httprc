@@ -163,9 +163,10 @@ func (c *ctrlBackend) loop(ctx context.Context, readywg, donewg *sync.WaitGroup)
 			// queued them. Without this check, a stale resource could be sent to
 			// a worker, causing an unnecessary fetch and a subsequent
 			// adjustIntervalRequest for a resource that is no longer registered.
-			if _, ok := c.items[pending[0].URL()]; !ok {
-				c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: skipping pending resource %q (no longer registered)", pending[0].URL()))
-				pending[0].SetBusy(false)
+			r := pending[0]
+			if cur, ok := c.items[r.URL()]; !ok || cur != r {
+				c.traceSink.Put(ctx, fmt.Sprintf("httprc controller: skipping pending resource %q (no longer registered or replaced)", r.URL()))
+				r.SetBusy(false)
 				pending = pending[1:]
 				continue
 			}
