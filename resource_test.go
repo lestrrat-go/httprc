@@ -254,6 +254,29 @@ func TestResourceErrorHandling(t *testing.T) {
 		require.Error(t, resource.Ready(readyCtx), "network error resource should not become ready")
 	})
 
+	t.Run("network error backs off instead of tight-looping", func(t *testing.T) {
+		minInterval := 2 * time.Second
+		resource, err := httprc.NewResource[[]byte](
+			"http://127.0.0.1:1/unreachable",
+			httprc.BytesTransformer(),
+			httprc.WithMinInterval(minInterval),
+		)
+		require.NoError(t, err)
+
+		require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)))
+
+		// Wait for the first fetch attempt to fail
+		readyCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		require.Error(t, resource.Ready(readyCtx))
+
+		// After a failed fetch, Next should be pushed forward by at least
+		// MinInterval, not stuck at epoch (which caused a tight retry loop).
+		next := resource.Next()
+		require.True(t, next.After(time.Now().Add(minInterval/2)),
+			"after connection failure, Next should be at least minInterval/2 in the future, got %v", next)
+	})
+
 	t.Run("context cancellation", func(t *testing.T) {
 		slowSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(2 * time.Second) // Slow response
