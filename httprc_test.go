@@ -69,17 +69,21 @@ func TestCache(t *testing.T) {
 	require.Equal(t, 1, called, `there should only be one fetch request`)
 	muCalled.Unlock()
 
-	time.Sleep(4 * time.Second)
+	// Wait for a background refresh to fire once the entry expires, instead
+	// of racing a fixed sleep against the (second-rounded) refresh schedule.
+	require.Eventually(t, func() bool {
+		muCalled.Lock()
+		defer muCalled.Unlock()
+		return called >= 2
+	}, 10*time.Second, 100*time.Millisecond, `a background refresh should fire after the entry expires`)
+
+	// Gets continue to succeed and are served from the cache.
 	for i := 0; i < 3; i++ {
 		_, err := c.Get(ctx, srv.URL)
 		require.NoError(t, err, `c.Get should succeed`)
 	}
 
-	muCalled.Lock()
-	require.Equal(t, 2, called, `there should only be one fetch request`)
-	muCalled.Unlock()
-
-	require.Empty(t, errSink.errors)
+	require.Empty(t, errSink.getErrors())
 
 	c.Register(srv.URL,
 		httprc.WithHTTPClient(srv.Client()),
@@ -89,9 +93,12 @@ func TestCache(t *testing.T) {
 		})),
 	)
 
+	// The synchronous Get returns the transform error to the caller; the
+	// error sink is only fed by background refreshes. Wait for one to fire
+	// rather than racing a fixed sleep against the refresh schedule.
 	_, _ = c.Get(ctx, srv.URL)
-	time.Sleep(3 * time.Second)
+	require.Eventually(t, func() bool {
+		return len(errSink.getErrors()) > 0
+	}, 10*time.Second, 100*time.Millisecond, `error sink should receive a background refresh error`)
 	cancel()
-
-	require.NotEmpty(t, errSink.getErrors())
 }
