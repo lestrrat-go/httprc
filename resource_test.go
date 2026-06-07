@@ -254,6 +254,34 @@ func TestResourceErrorHandling(t *testing.T) {
 		require.Error(t, resource.Ready(readyCtx), "network error resource should not become ready")
 	})
 
+	t.Run("network error backs off instead of tight-looping", func(t *testing.T) {
+		minInterval := 2 * time.Second
+		resource, err := httprc.NewResource[[]byte](
+			"http://127.0.0.1:1/unreachable",
+			httprc.BytesTransformer(),
+			httprc.WithMinInterval(minInterval),
+		)
+		require.NoError(t, err)
+
+		// Next starts at epoch (time.Unix(0, 0)) so the resource is fetched
+		// immediately; capture the time before Add so we can tell once a
+		// failed fetch has pushed Next forward.
+		before := time.Now()
+		require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)))
+
+		// Wait for the first failed fetch to move Next off its initial epoch
+		// value. Polling avoids racing the fetch against a fixed sleep.
+		require.Eventually(t, func() bool {
+			return resource.Next().After(before)
+		}, 5*time.Second, 50*time.Millisecond,
+			"after a connection failure, Next should be pushed into the future, not left at epoch")
+
+		// The backoff should be on the order of MinInterval, which is what
+		// prevents the tight retry loop.
+		require.GreaterOrEqual(t, resource.Next().Sub(before), minInterval/2,
+			"after a connection failure, Next should be backed off by ~MinInterval")
+	})
+
 	t.Run("context cancellation", func(t *testing.T) {
 		slowSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(2 * time.Second) // Slow response
