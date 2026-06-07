@@ -263,18 +263,23 @@ func TestResourceErrorHandling(t *testing.T) {
 		)
 		require.NoError(t, err)
 
+		// Next starts at epoch (time.Unix(0, 0)) so the resource is fetched
+		// immediately; capture the time before Add so we can tell once a
+		// failed fetch has pushed Next forward.
+		before := time.Now()
 		require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)))
 
-		// Wait for the first fetch attempt to fail
-		readyCtx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
-		require.Error(t, resource.Ready(readyCtx))
+		// Wait for the first failed fetch to move Next off its initial epoch
+		// value. Polling avoids racing the fetch against a fixed sleep.
+		require.Eventually(t, func() bool {
+			return resource.Next().After(before)
+		}, 5*time.Second, 50*time.Millisecond,
+			"after a connection failure, Next should be pushed into the future, not left at epoch")
 
-		// After a failed fetch, Next should be pushed forward by at least
-		// MinInterval, not stuck at epoch (which caused a tight retry loop).
-		next := resource.Next()
-		require.True(t, next.After(time.Now().Add(minInterval/2)),
-			"after connection failure, Next should be at least minInterval/2 in the future, got %v", next)
+		// The backoff should be on the order of MinInterval, which is what
+		// prevents the tight retry loop.
+		require.GreaterOrEqual(t, resource.Next().Sub(before), minInterval/2,
+			"after a connection failure, Next should be backed off by ~MinInterval")
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
