@@ -24,25 +24,34 @@ func TestWorkerPoolBehavior(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	var requestCount int64
-	var mu sync.Mutex
-	var requestTimes []time.Time
+	// The subtests run in parallel, so each one gets its own server and
+	// counter; sharing mutable state across parallel subtests was the source
+	// of flakiness (the second subtest reset a counter the first was reading).
+	newCountingServer := func(t *testing.T) (*httptest.Server, func() int64) {
+		t.Helper()
+		var mu sync.Mutex
+		var requestCount int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			mu.Lock()
+			requestCount++
+			count := requestCount
+			mu.Unlock()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		mu.Lock()
-		requestTimes = append(requestTimes, time.Now())
-		requestCount++
-		count := requestCount
-		mu.Unlock()
-
-		// Simulate some work
-		time.Sleep(10 * time.Millisecond)
-		json.NewEncoder(w).Encode(map[string]int64{"count": count})
-	}))
-	t.Cleanup(srv.Close)
+			// Simulate some work
+			time.Sleep(10 * time.Millisecond)
+			json.NewEncoder(w).Encode(map[string]int64{"count": count})
+		}))
+		t.Cleanup(srv.Close)
+		return srv, func() int64 {
+			mu.Lock()
+			defer mu.Unlock()
+			return requestCount
+		}
+	}
 
 	t.Run("worker pool processes requests concurrently", func(t *testing.T) {
 		t.Parallel()
+		srv, count := newCountingServer(t)
 		const numWorkers = 5
 		traceDst := io.Discard
 		if testing.Verbose() {
@@ -86,19 +95,12 @@ func TestWorkerPoolBehavior(t *testing.T) {
 		}
 		wg.Wait()
 
-		mu.Lock()
-		finalCount := requestCount
-		mu.Unlock()
-		require.Greater(t, finalCount, int64(numResources), "should have processed multiple requests")
+		require.Greater(t, count(), int64(numResources), "should have processed multiple requests")
 	})
 
 	t.Run("single worker processes requests sequentially", func(t *testing.T) {
 		t.Parallel()
-		// Reset counters
-		mu.Lock()
-		requestCount = 0
-		requestTimes = requestTimes[:0]
-		mu.Unlock()
+		srv, _ := newCountingServer(t)
 
 		traceDst := io.Discard
 		if testing.Verbose() {
