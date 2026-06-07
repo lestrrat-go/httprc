@@ -132,9 +132,9 @@ func TestConcurrentResourceAccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var requestCount int64
+	var requestCount atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		count := atomic.AddInt64(&requestCount, 1)
+		count := requestCount.Add(1)
 		json.NewEncoder(w).Encode(map[string]int64{"count": count})
 	}))
 	defer srv.Close()
