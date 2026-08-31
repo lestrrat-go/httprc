@@ -258,7 +258,15 @@ func (q *queue) fetchAndStore(ctx context.Context, e *entry) error {
 		return fmt.Errorf(`failed to fetch %q: %w`, e.request.url, err)
 	}
 
-	q.enqueueNextFetch(res, e)
+	defer func() {
+		// If a panic occurs, we need to queue the next fetch
+		if r := recover(); r != nil {
+			e.lastFetch = time.Time{}
+			q.enqueueNextFetch(nil, e)
+			panic(r)
+		}
+		q.enqueueNextFetch(res, e)
+	}()
 
 	data, err := e.transform.Transform(e.request.url, res)
 	if err != nil {

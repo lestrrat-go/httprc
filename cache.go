@@ -153,17 +153,14 @@ func (c *Cache) getOrFetch(ctx context.Context, u string, forceRefresh bool) (in
 
 	// Only one goroutine may enter this section.
 	e.acquireSem()
-
+	defer e.releaseSem()
 	// has this entry been fetched? (but ignore and do a fetch
 	// if forceRefresh is true)
 	if forceRefresh || !e.hasBeenFetched() {
 		if err := c.queue.fetchAndStore(ctx, e); err != nil {
-			e.releaseSem()
 			return nil, fmt.Errorf(`failed to fetch %q: %w`, u, err)
 		}
 	}
-
-	e.releaseSem()
 
 	e.mu.RLock()
 	data := e.data
