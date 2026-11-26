@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -465,5 +467,243 @@ func TestResourceIntervals(t *testing.T) {
 		// Unset busy
 		resource.SetBusy(false)
 		require.False(t, resource.IsBusy())
+	})
+}
+
+func TestResourceReadyOrErr(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cl := httprc.NewClient()
+	ctrl, err := cl.Start(ctx)
+	require.NoError(t, err, "client start should succeed")
+	t.Cleanup(func() { ctrl.Shutdown(time.Second) })
+
+	// newResource registers a resource without waiting for the first fetch.
+	newResource := func(t *testing.T, u string, tr httprc.Transformer[[]byte]) *httprc.ResourceBase[[]byte] {
+		t.Helper()
+		resource, err := httprc.NewResource[[]byte](u, tr)
+		require.NoError(t, err)
+		require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)))
+		return resource
+	}
+	// readyOrErr runs ReadyOrErr with a generous bound, and fails the test if
+	// it only returned because that bound expired: the point of ReadyOrErr is
+	// to return on its own once an attempt has failed.
+	readyOrErr := func(t *testing.T, resource *httprc.ResourceBase[[]byte]) error {
+		t.Helper()
+		tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		err := resource.ReadyOrErr(tctx)
+		require.NotErrorIs(t, err, context.DeadlineExceeded, "ReadyOrErr waited for the context instead of reporting the failure")
+		return err
+	}
+
+	t.Run("returns nil once the resource is ready", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("ok"))
+		}))
+		t.Cleanup(srv.Close)
+
+		resource := newResource(t, srv.URL, httprc.BytesTransformer())
+		require.NoError(t, readyOrErr(t, resource))
+		require.NoError(t, resource.Ready(ctx))
+		// And it keeps returning nil.
+		require.NoError(t, readyOrErr(t, resource))
+	})
+
+	t.Run("returns the error of a failed first attempt", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "down", http.StatusInternalServerError)
+		}))
+		t.Cleanup(srv.Close)
+
+		resource := newResource(t, srv.URL, httprc.BytesTransformer())
+		err := readyOrErr(t, resource)
+		require.ErrorContains(t, err, "500")
+
+		// The failure is remembered: later calls answer right away, too.
+		require.ErrorContains(t, readyOrErr(t, resource), "500")
+	})
+
+	t.Run("returns the error of a transport failure", func(t *testing.T) {
+		t.Parallel()
+		resource := newResource(t, "http://127.0.0.1:1/unreachable", httprc.BytesTransformer())
+		require.Error(t, readyOrErr(t, resource))
+	})
+
+	t.Run("returns the error of a transformer failure", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("not json"))
+		}))
+		t.Cleanup(srv.Close)
+
+		resource, err := httprc.NewResource[map[string]any](srv.URL, httprc.JSONTransformer[map[string]any]())
+		require.NoError(t, err)
+		require.NoError(t, ctrl.Add(ctx, resource, httprc.WithWaitReady(false)))
+
+		tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		err = resource.ReadyOrErr(tctx)
+		require.Error(t, err)
+		require.NotErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	t.Run("waits while the first attempt is in flight", func(t *testing.T) {
+		t.Parallel()
+		release := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-release:
+				_, _ = w.Write([]byte("ok"))
+			case <-r.Context().Done():
+			}
+		}))
+		t.Cleanup(srv.Close)
+		t.Cleanup(func() {
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		})
+
+		resource := newResource(t, srv.URL, httprc.BytesTransformer())
+
+		// While the fetch hangs, ReadyOrErr is bounded by the context only.
+		tctx, cancelShort := context.WithTimeout(ctx, 200*time.Millisecond)
+		defer cancelShort()
+		require.ErrorIs(t, resource.ReadyOrErr(tctx), context.DeadlineExceeded)
+
+		// Once the fetch completes, it reports success.
+		close(release)
+		require.NoError(t, readyOrErr(t, resource))
+	})
+
+	t.Run("a failed refresh does not take readiness away", func(t *testing.T) {
+		t.Parallel()
+		var failing atomic.Bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if failing.Load() {
+				http.Error(w, "down", http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte("ok"))
+		}))
+		t.Cleanup(srv.Close)
+
+		resource := newResource(t, srv.URL, httprc.BytesTransformer())
+		require.NoError(t, readyOrErr(t, resource))
+
+		failing.Store(true)
+		require.Error(t, ctrl.Refresh(ctx, srv.URL), "the refresh itself must fail")
+
+		// Both channels inside ReadyOrErr are closed now; it must keep
+		// reporting the resource as ready, every time.
+		for range 100 {
+			require.NoError(t, resource.ReadyOrErr(ctx))
+		}
+		require.Equal(t, []byte("ok"), resource.Resource())
+	})
+
+	t.Run("a success after a failure makes it ready", func(t *testing.T) {
+		t.Parallel()
+		var failing atomic.Bool
+		failing.Store(true)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if failing.Load() {
+				http.Error(w, "down", http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte("ok"))
+		}))
+		t.Cleanup(srv.Close)
+
+		resource := newResource(t, srv.URL, httprc.BytesTransformer())
+		require.ErrorContains(t, readyOrErr(t, resource), "500")
+
+		failing.Store(false)
+		require.NoError(t, ctrl.Refresh(ctx, srv.URL))
+
+		// The earlier failure is still recorded and ready is closed now; the
+		// select inside ReadyOrErr may see either, so repeat.
+		for range 100 {
+			require.NoError(t, resource.ReadyOrErr(ctx))
+		}
+	})
+
+	t.Run("reports the latest error while never ready", func(t *testing.T) {
+		t.Parallel()
+		var status atomic.Int32
+		status.Store(http.StatusInternalServerError)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "down", int(status.Load()))
+		}))
+		t.Cleanup(srv.Close)
+
+		resource := newResource(t, srv.URL, httprc.BytesTransformer())
+		require.ErrorContains(t, readyOrErr(t, resource), "500")
+
+		status.Store(http.StatusServiceUnavailable)
+		require.Error(t, ctrl.Refresh(ctx, srv.URL))
+		require.ErrorContains(t, readyOrErr(t, resource), "503")
+	})
+
+	t.Run("overlapping Syncs record their outcome once", func(t *testing.T) {
+		t.Parallel()
+		// Sync is exported and also runs from Controller.Refresh, so several
+		// can overlap; none of them may close the attempt channel twice.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "down", http.StatusInternalServerError)
+		}))
+		t.Cleanup(srv.Close)
+
+		resource, err := httprc.NewResource[[]byte](srv.URL, httprc.BytesTransformer())
+		require.NoError(t, err)
+
+		const syncs = 20
+		var wg sync.WaitGroup
+		errs := make([]error, syncs)
+		for i := range syncs {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs[i] = resource.Sync(ctx)
+			}()
+		}
+		wg.Wait()
+		for i, err := range errs {
+			require.Errorf(t, err, "sync %d should report the failed fetch", i)
+		}
+		require.ErrorContains(t, readyOrErr(t, resource), "500")
+	})
+
+	t.Run("wakes every concurrent waiter", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(100 * time.Millisecond)
+			http.Error(w, "down", http.StatusBadGateway)
+		}))
+		t.Cleanup(srv.Close)
+
+		resource := newResource(t, srv.URL, httprc.BytesTransformer())
+		const waiters = 20
+		errs := make(chan error, waiters)
+		for range waiters {
+			go func() { errs <- resource.ReadyOrErr(ctx) }()
+		}
+		for range waiters {
+			select {
+			case err := <-errs:
+				require.ErrorContains(t, err, "502")
+			case <-time.After(10 * time.Second):
+				t.Fatal("a waiter was not woken by the failed attempt")
+			}
+		}
 	})
 }
