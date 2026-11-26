@@ -20,6 +20,8 @@ type ResourceBase[T any] struct {
 	u           string
 	ready       chan struct{} // closed when the resource is ready (i.e. after first successful fetch)
 	once        sync.Once
+	failed      chan struct{}         // closed when a fetch attempt first fails
+	lastErr     atomic.Pointer[error] // error of the latest failed fetch attempt
 	httpcl      HTTPClient
 	t           Transformer[T]
 	r           atomic.Value
@@ -78,6 +80,7 @@ func NewResource[T any](s string, transformer Transformer[T], options ...NewReso
 		t:        transformer,
 		interval: interval,
 		ready:    make(chan struct{}),
+		failed:   make(chan struct{}),
 	}
 	if httpcl != nil {
 		r.httpcl = httpcl
@@ -96,12 +99,44 @@ func (r *ResourceBase[T]) URL() string {
 // Ready returns an empty error when the resource is ready. If the context
 // is canceled before the resource is ready, it will return the error from
 // the context.
+//
+// Ready only returns once a fetch has succeeded: it keeps waiting while the
+// fetches fail. Use ReadyOrErr to stop waiting as soon as a fetch has failed.
 func (r *ResourceBase[T]) Ready(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-r.ready:
 		return nil
+	}
+}
+
+// ReadyOrErr waits until the resource is ready or a fetch has failed. It
+// returns nil if the resource is ready, which is the case for good once any
+// fetch has succeeded, even if later refreshes fail. If fetches have failed
+// and none has succeeded yet, it returns the error of the latest failed
+// attempt right away, without waiting for the next scheduled refresh. If the
+// context is canceled while the first attempt is still in flight, it returns
+// the error from the context.
+//
+// Unlike Ready, it does not block while an endpoint keeps failing, so callers
+// can report a failing endpoint instead of waiting for the context to expire.
+func (r *ResourceBase[T]) ReadyOrErr(ctx context.Context) error {
+	select {
+	case <-r.ready:
+		return nil
+	case <-r.failed:
+		// Both channels are closed when a fetch failed and a later one
+		// succeeded, or the other way around. Either way the resource is
+		// usable, so ready wins over lastErr.
+		select {
+		case <-r.ready:
+			return nil
+		default:
+			return *r.lastErr.Load()
+		}
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -217,7 +252,24 @@ func httpClientFromContext(ctx context.Context) HTTPClient {
 	return http.DefaultClient
 }
 
+// Sync fetches the resource once and stores the transformed value. It records
+// a failure so that ReadyOrErr can report it; a success is recorded by closing
+// the ready channel in doSync.
 func (r *ResourceBase[T]) Sync(ctx context.Context) error {
+	err := r.doSync(ctx)
+	if err != nil {
+		// The first failure closes failed. Swapping makes that decision
+		// atomic, so it happens exactly once however many Syncs overlap (a
+		// scheduled fetch and a Refresh, say). The error is stored before the
+		// channel is closed, so a ReadyOrErr woken by failed always finds it.
+		if r.lastErr.Swap(&err) == nil {
+			close(r.failed)
+		}
+	}
+	return err
+}
+
+func (r *ResourceBase[T]) doSync(ctx context.Context) error {
 	traceSink := traceSinkFromContext(ctx)
 	httpcl := r.httpcl
 	if httpcl == nil {
